@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Gebaute Binaries / Installer-Ausgaben (nicht versionieren)
+installer/build/
+installer/dist/
+installer/Ausgabe/
+*.exe
+*.pdb
+
+# Persoenliche Fahrerkarten-Daten und Caches (NICHT hochladen)
+/*.DDD
+orts_cache.json
+spesen_state.json
+sampledata.zip

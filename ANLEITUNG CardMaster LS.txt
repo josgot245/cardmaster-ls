@@ -1,0 +1,279 @@
+CardMaster LS — Spesenzettel aus der Fahrerkarte — Anleitung
+============================================================
+
+CardMaster LS (Version 1.4.3) liest die digitale Fahrerkarte
+(Tachographenkarte) über einen USB-Kartenleser aus und befüllt daraus
+automatisch den Spesenzettel „Reisekostenabrechnung“ auf dem
+gescannten Originalformular. Zusätzlich zeigt es die Kartendaten des
+gewählten Tages mit Tagesgrafik, Kreisdiagramm und Verstößen an.
+
+Das Fenster erscheint in den Firmenfarben von LS Logistik (Dunkelblau
+#242E45, Rot #9C1006, Grün #94C11C) auf hellen Flächen. Farben,
+Schriften und die Gestaltung der Bedienelemente sind zentral in der
+Datei stil.py hinterlegt und lassen sich dort anpassen.
+
+Neu in Version 1.4.3
+--------------------
+• GNSS-Positionen werden jetzt korrekt gelesen. Die Karte speichert
+  Breite und Länge als ganze Zahl in der Form DDMM.M (Breite) bzw.
+  DDDMM.M (Länge) — also als Zehnfaches von „Grad + Minuten“
+  (VO (EU) 2016/799, Anhang 1C). Zuvor wurde fälschlich durch 1000
+  geteilt; dadurch lag jede Position rund 0,2° (etwa 24 km) zu weit
+  süd-westlich und die Ortsnamen waren falsch (der Heimatort erschien
+  z. B. als „Hagen im Bremischen“ statt „Geestland“). Betroffen waren
+  die Tätigkeitsorte (EF 0506), die GNSS-Punkte (EF 0524) und die
+  Grenzübertritte (EF 0528).
+
+Neu in Version 1.4.2
+--------------------
+• Zeitstrahl in der Tagesansicht überarbeitet: durchgehender
+  24-Stunden-Balken mit Stundenraster, farbigen Abschnitten, Legende
+  und der Gesamtarbeitszeit (Fahrt + Arbeit) als große Kennzahl.
+• Tagesarbeitszeit wird am letzten Aktivitätswechsel beendet, wenn die
+  Karte während der Arbeit gezogen wurde. Dadurch entstehen keine
+  fälschlich hohen Werte mehr (Beispiel 12.11.: 9:03 statt 13:13).
+• Spesenzettel: Reiseweg als „Heimatort – Zwischenort – Heimatort“
+  ohne Pfeil; bewegungsfreie Wochenenden bleiben als Leerzeilen stehen.
+• Der Heimatort wird als reiner Ortsname angezeigt (z. B. Geestland).
+• Programm- und Setup-Symbol wieder in der bisherigen Form.
+
+Installation (einmalig)
+-----------------------
+Setup starten:   installer\Ausgabe\CardMaster-Setup-1.4.3.exe
+                  (Doppelklick, dann „Weiter“ — keine Administrator-Rechte nötig)
+
+Im Assistenten lässt sich der Installationsordner frei wählen
+(voreingestellt: %LOCALAPPDATA%\Programs\CardMaster LS).
+Außerdem kann man festlegen, ob eine Desktop-Verknüpfung und ein
+Startmenü-Eintrag angelegt werden (beides standardmäßig aktiv).
+
+Deinstallation:  über Startmenü-Eintrag „Deinstallieren“ oder
+                  Windows-Einstellungen > Apps.
+
+Wichtig: Abrechnungsstand, Ortsnamen-Cache und Einstellungen liegen
+         standardmäßig im Ordner Dokumente\CardMaster LS.
+         Die .ddd-Downloads und die fertigen Spesenzettel-PDFs landen
+         ebenfalls dort, können aber im Programm unter „Speicherorte“
+         getrennt geändert werden.
+         Der Datenordner bleibt bei einer Deinstallation erhalten.
+
+Wer bereits die Version 1.0 („Spesenzettel“) benutzt hat:
+  • Das Setup entfernt die alte Installation automatisch
+    (Programmordner, Symbole, Eintrag unter „Apps & Features“).
+  • Die bisherigen Dateien aus Dokumente\Spesenzettel (Spesenzettel,
+    Abrechnungsstand, .ddd-Downloads) werden beim ersten Start von
+    CardMaster LS in den neuen Ordner Dokumente\CardMaster LS
+    übernommen. Der alte Ordner bleibt zunächst unberührt und kann
+    später von Hand gelöscht werden.
+
+Die Installation enthält alles Nötige (inkl. Python) — es muss
+nichts weiter installiert werden. Nur der USB-Kartenleser mit
+Fahrerkarte wird zum Auslesen benötigt.
+
+Bedienung
+---------
+1. Auf der Startseite (erste Registerkarte) die Fahrerkarte in den
+   USB-Kartenleser stecken und „Karte auslesen (USB-Kartenleser)“
+   klicken. Es wird automatisch ein .ddd-Download erzeugt (für
+   TachoPlus & Co.) und ausgewertet.
+   Bereits vorhandene .ddd-Dateien können alternativ über
+   „.ddd-Datei öffnen …“ geladen werden.
+
+2. Auf der Startseite die Kopfdaten prüfen: Name, Abteilung und
+   Pers.-Nr. werden je Fahrerkarte gespeichert und beim nächsten Mal
+   vorbelegt.
+
+   Heimatort (Wohnort): Im Feld „Heimatort (PLZ oder Ort)“ den Wohnort
+   eintragen (z. B. „Bexhövede“ oder „27612 Bexhövede“) und „Prüfen“
+   wählen. Der Ort wird einmalig online gesucht und je Fahrerkarte
+   gespeichert; danach genügt das Lesen der Karte.
+
+   • Ohne Heimatort: Abrechnung wie bisher — eine Zeile je Fahrt
+     (Nahverkehr).
+   • Mit Heimatort: eine Zeile je Kalendertag. Hat der Lkw nachts nicht
+     im Umkreis des Wohnorts (ca. 8 km) gestanden, wird der Tag um
+     00:00 geteilt: Ende 00:00, Folgetag Beginn 00:00 (Fernverkehr).
+     Hat er zuhause gestanden, bleiben die echten Beginn-/Endzeiten.
+     Beide Fälle werden automatisch erkannt.
+   Der Lkw-Abstellplatz muss nicht angegeben werden; maßgeblich ist
+   allein der Wohnort des Fahrers.
+
+3. Die Tabelle zeigt nur die Einträge (Fahrten bzw. Tage), die noch auf
+   keinem Spesenzettel standen. Damit nichts doppelt abgerechnet wird,
+   merkt sich das Programm pro Fahrerkarte den letzten abgerechneten Tag
+   — die Karte eines anderen Fahrers hat ihren eigenen Stand.
+
+4. „Spesenzettel erstellen (PDF)“ befüllt das gescannte Originalformular
+   (Spesen.pdf): Datum, Uhrzeiten Beginn/Ende, Reiseanlass mit
+   Reiseweg (bei Touren Ort → Ort, bei Tageszeilen ein Ort aus der
+   Schicht; Fahrzeug, km) und die exakte Dauer (Minuten genau, keine
+   Rundung). Bei einem Grenzübertritt am Tag wird das Land ergänzt,
+   z. B. „Dienstfahrt (D,NL)“. Kosten-Spalten bleiben frei.
+   Pro Abrechnungszeitraum (16. bis 15. des Folgemonats) wird ein Blatt
+   erzeugt; sind mehr als 26 Zeilen dabei, bekommt das Blatt weitere
+   Seiten. Nachgetragene Einträge für einen schon abgerechneten Zeitraum
+   werden als Ergänzungsblatt (…_2.pdf) erzeugt.
+   Über „Ordner öffnen“ gelangt man direkt zu den erstellten Dateien.
+
+Speicherorte ändern
+-------------------
+Auf der Startseite unter „Speicherorte“ lassen sich zwei Ordner
+getrennt festlegen:
+
+  • „.ddd-Downloads“ — Zielordner für die beim Auslesen erzeugten
+    .ddd-Dateien. Voreinstellung: Dokumente\CardMaster LS.
+  • „Spesenzettel (PDF)“ — Zielordner für die erzeugten PDFs.
+    Voreinstellung: Dokumente\CardMaster LS.
+
+„Ändern …“ öffnet die Ordnerauswahl, „Standard“ stellt den
+ursprünglichen Ordner wieder her. Die Einstellung wird sofort
+gespeichert (einstellungen.json im Datenordner) und gilt für alle
+Karten. Abrechnungsstand und Ortscache bleiben unabhängig davon im
+Datenordner Dokumente\CardMaster LS.
+
+Kartendaten ansehen
+-------------------
+Nach dem Laden der Karte zeigt die Startseite eine Kurzstatistik
+(Tage, Verstöße, Hinweise, Fahrten, Abrechnungsstand). Über
+„Kartendaten ansehen“ öffnet sich die Tagesauswertung unabhängig
+vom Spesenzettel — sie ändert nichts am Abrechnungsstand:
+
+  • Links die Liste aller Tage (neuester Tag oben, automatisch
+    ausgewählt). Spalten: Datum, Fahrt, Arbeit, Ruhe, km und die
+    Anzahl der Verstöße. Tage mit Verstoß sind rot markiert,
+    unvollständige Tage (nach dem letzten Auslesen) grau mit *.
+  • Rechts der gewählte Tag:
+      – 24-Stunden-Balken mit Ruhe (grau), Bereitschaft (blau),
+        Arbeit (gelb) und Fahrt (grün). Zeigt die Maus auf den
+        Balken, erscheinen Zeitspanne und Dauer.
+      – Kreisdiagramm mit den Zeitanteilen des Tages (Ruhe,
+        Bereitschaft, Arbeit, Fahrt, unbekannt) in Stunden und
+        Prozent.
+      – Verstöße und Ereignisse des Tages mit Zeit, Art,
+        Beschreibung und der jeweiligen Rechtsgrundlage.
+  • In der Kopfzeile stehen Kartennummer, Name, Zeitraum,
+    Kartengeneration, Fahrzeuge und der letzte Download.
+
+Rechtsgrundlagen
+----------------
+Die Registerkarte „Rechtsgrundlagen“ fasst die Kennzahlen der
+geladenen Karte und die angewendeten Vorschriften zusammen. Rot
+markierte Zeilen sollten vor der Abrechnung geprüft werden; gelbe
+Zeilen sind Hinweise, weil die Fahrerkarte nicht alle Zeiten
+aufzeichnet (z. B. Pausen außerhalb des Fahrzeugs).
+
+Geprüft werden unter anderem:
+  • Lenkzeitblöcke: höchstens 4:30 h ohne ausreichende Pause
+    (45 Minuten am Stück oder 15 + 30 Minuten) — Art. 7 VO (EG)
+    561/2006.
+  • Tageslenkzeit: 9 h, zweimal pro Woche bis 10 h — Art. 6 Abs. 1.
+  • Wochenlenkzeit: höchstens 56 h — Art. 6 Abs. 2.
+  • Zwei aufeinanderfolgende Wochen: höchstens 90 h — Art. 6 Abs. 3.
+  • Tagesruhezeit: mindestens 9 h; höchstens drei verkürzte
+    Tagesruhen zwischen zwei Wochenruhen — Art. 8 Abs. 2 und 4.
+  • Wochenruhe: 45 h (auf 24 h verkürzbar), Beginn spätestens nach
+    6 × 24 h, Ausgleich verkürzter Wochenruhen bis zum Ende der
+    dritten Folgewoche — Art. 8 Abs. 6.
+  • Arbeitszeit nach ArbZG: höchstens 10 h täglich (§ 3), 60 h
+    wöchentlich und Ø 48 h über 16 Wochen (§ 21a Abs. 4), Pausen
+    nach § 4, Nachtarbeit nach § 6.
+  • Aufgezeichnete Ereignisse und Störungen der Karte nach
+    VO (EU) 165/2014; Geschwindigkeitsüberschreitungen nach § 3 StVO.
+  • Für Fahrzeuge über 2,8 t bis 3,5 t verweist § 1 FPersV auf die
+    Lenk- und Ruhezeiten der VO (EG) 561/2006.
+
+Hinweis: Die Prüfungen sind eine Kontrollhilfe und ersetzen keine
+rechtliche Bewertung. Zeiten, die nicht auf der Karte aufgezeichnet
+werden (Pausen, andere Arbeiten außerhalb des Fahrzeugs), können
+nicht berücksichtigt werden.
+
+Fahrerkarten der 2. Generation (Gen 2)
+--------------------------------------
+Karten der 2. Generation (erkennbar am zusätzlichen Chip-Symbol auf
+der Karte) speichern zu jedem Tätigkeitsort zusätzlich die GNSS-
+Position (GPS). CardMaster LS liest beide Kartengenerationen aus:
+
+  • Bei Gen-2-Karten wird neben der herkömmlichen Anwendung auch die
+    Gen-2-Anwendung der Karte gelesen — der .ddd-Download enthält
+    dann beide Datensätze und bleibt damit auch für Auswertungs-
+    programme voll verwertbar.
+  • Aus den GNSS-Positionen ermittelt das Programm die Ortsnamen der
+    Fahrten (Start und Ziel) und trägt im Spesenzettel z. B.
+    „Barnstorf → Bremen, Fzg. HB-B 2348, 46 km“ ein.
+  • Die Ortsnamen werden einmalig online über OpenStreetMap
+    (Nominatim) ermittelt und dauerhaft im Datenordner gespeichert
+    (ortscache.json) — jede Position wird also nur ein einziges Mal
+    angefragt. Ohne Internetverbindung werden ersatzweise die
+    Koordinaten angezeigt; sobald wieder Internet vorhanden ist,
+    werden die Namen nachgeholt.
+  • Ältere Karten der 2. Generation (z. B. aus 2021) besitzen einige
+    später ergänzte Dateien noch nicht (u. a. Grenzübertritte,
+    Be-/Entladevorgänge). Diese werden beim Auslesen übersprungen;
+    der Download bleibt vollständig verwendbar.
+
+Probleme beim Auslesen
+----------------------
+  • „Datei EF.ICC … nicht auf der Karte gefunden“: Dieser Fehler trat
+    auf, wenn die Karte nach einem Auslesen im Leser stecken blieb.
+    Ab Version 1.3.1 wird die Karte vor jedem Auslesen automatisch
+    zurückgesetzt; ein erneutes Auslesen funktioniert damit ohne
+    Ziehen der Karte. Tritt der Fehler weiterhin auf, Karte kurz
+    abziehen und neu einstecken.
+  • „Keine Karte im Leser … gefunden“: Karte richtig einstecken (Chip
+    nach unten/vorne, je nach Leser) und bis zum Anschlag drücken. Ab
+    Version 1.4.2 versucht das Programm den Zugriff automatisch
+    mehrmals; die Meldung nennt zusätzlich den PC/SC-Code und einen
+    konkreten Hinweis (z. B. Karte abziehen und neu einstecken).
+  • „SCARD_E_SHARING_VIOLATION“: Die Karte wird von einem anderen
+    Programm benutzt (Tachographen- oder Auslesesoftware). Dieses
+    Programm schließen und erneut versuchen.
+  • „SCARD_E_NO_SERVICE“: Der Windows-Dienst „Smart Card“ läuft nicht.
+    Dienst starten (Dienste-Verwaltung) oder den PC neu starten.
+  • „Kein Kartenleser gefunden“: USB-Kartenleser anschließen; die
+    Windows-Smartcard-Dienste müssen laufen (Dienst „Smart Card“).
+
+Neu bauen / aktualisieren
+-------------------------
+Programmcode ändern und dann   installer_bauen.bat   starten
+(neue „CardMaster LS.exe“ erzeugen), danach ggf. das Setup neu
+kompilieren. Die Datei installer\CardMaster LS.spec enthält das
+Formular, das Programm-Symbol, den Grafikordner assets und die
+Anleitung; installer_bauen.bat baut daraus.
+
+Programm-Icon und Setup-Grafiken stammen aus dem Ordner assets und
+werden vor dem Bauen automatisch neu erzeugt:
+  py installer\installer_icon.py      assets\cardmaster.ico und
+                                      installer\cardmaster.ico
+  py installer\installer_grafiken.py  wizard_image.bmp und
+                                      wizard_small.bmp
+Nach Änderungen an den Assets genügt also ein erneuter Aufruf von
+installer_bauen.bat.
+  "C:\Users\joshu\AppData\Local\Programs\Inno Setup 6\ISCC.exe"
+  installer\cardmaster.iss
+(Installer-Ordner „Inno Setup 6“ wurde per winget installiert.)
+
+Dateien (Entwicklung)
+---------------------
+spesenzettel_gui.py     Fenster-Oberfläche (Programmeinstieg)
+kartendaten_gui.py      Ansicht „Kartendaten ansehen“ (Tagesgrafik,
+                        Kreisdiagramm, Verstöße) und
+                        „Rechtsgrundlagen“ (Kennzahlen, Vorschriften)
+kartendaten.py          Tagesauswertung, Verstoßprüfungen und
+                        Kennzahlen nach VO (EG) 561/2006, FPersV, ArbZG
+assets.py               lädt die Grafiken aus dem Ordner assets
+assets\                 Firmen-/Produktlogo und Symbole (PNG)
+spesenzettel.py         Kommandozeile: py spesenzettel.py [datei.ddd] [--alle]
+spesen_lib.py           gemeinsame Logik (Auswertung, Zeiträume,
+                        Ortsnamen, PDF)
+spesen_daten.py         Rohdaten aus der .ddd (EF 0506/0505, Gen-2/GNSS)
+fahrerkarte.py          Karten-Download über USB (eigenständig nutzbar)
+Spesen.pdf              gescanntes Blanko-Formular (Vorlage)
+spesen_state.json       Abrechnungsstand je Fahrerkarte (Datenordner)
+installer_bauen.bat     eigenständige „CardMaster LS.exe“ bauen
+installer\cardmaster.iss    Inno-Setup-Skript für den Installer
+installer\installer_icon.py     Programm-Icon aus den Assets erzeugen
+installer\installer_grafiken.py Setup-Grafiken aus den Assets erzeugen
+„CardMaster LS starten.bat“  Programm ohne Installation starten (py)
+
+Hinweis: keine Steuerberatung — Verpflegungspauschalen und Beträge
+bitte selbst prüfen bzw. mit dem Arbeitgeber abstimmen.
