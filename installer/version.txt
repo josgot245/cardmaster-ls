@@ -4,8 +4,8 @@
 
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 4, 3, 0),
-    prodvers=(1, 4, 3, 0),
+    filevers=(1, 4, 4, 0),
+    prodvers=(1, 4, 4, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -20,11 +20,11 @@ VSVersionInfo(
         [
           StringStruct('CompanyName', 'Standardprojekt'),
           StringStruct('FileDescription', 'CardMaster LS - Spesenzettel aus der Fahrerkarte'),
-          StringStruct('FileVersion', '1.4.3'),
+          StringStruct('FileVersion', '1.4.4'),
           StringStruct('InternalName', 'CardMaster LS'),
           StringStruct('OriginalFilename', 'CardMaster LS.exe'),
           StringStruct('ProductName', 'CardMaster LS'),
-          StringStruct('ProductVersion', '1.4.3'),
+          StringStruct('ProductVersion', '1.4.4'),
         ],
       ),
     ]),

@@ -93,11 +93,11 @@ class App(tk.Tk):
         rechts.grid(row=0, column=2, sticky="e", padx=18)
         tk.Label(rechts, text="CardMaster LS", background=stil.NAVY,
                  foreground=stil.WEISS,
-                 font=(stil.SCHRIFT, 16, "bold")).pack(anchor="e")
+                 font=stil.schrift(stil.PT_GROSS, True)).pack(anchor="e")
         tk.Label(rechts,
                  text="Fahrerkarte · Spesen · Rechtsgrundlagen",
                  background=stil.NAVY, foreground="#B9C2D6",
-                 font=(stil.SCHRIFT, 8)).pack(anchor="e")
+                 font=stil.schrift(stil.PT_KLEIN)).pack(anchor="e")
 
         # schmale Markenlinie unter der Kopfleiste
         tk.Frame(self, background=stil.GRUEN, height=3).grid(
@@ -155,10 +155,10 @@ class App(tk.Tk):
 
         ttk.Label(rahmen, text="Fahrerkarte und Spesenzettel",
                   foreground=stil.NAVY,
-                  font=(stil.SCHRIFT, 17, "bold")).grid(
+                  font=stil.schrift(stil.PT_HERO, True)).grid(
             row=0, column=0, sticky="w", padx=16, pady=(16, 2))
         ttk.Label(rahmen, foreground=stil.GEDAEMPFT,
-                  font=stil.schrift(9),
+                  font=stil.schrift(stil.PT_TEXT),
                   text="Karte auslesen oder einen vorhandenen Karten-Download "
                        "öffnen. Daraus entstehen Kartendaten, Verstöße und "
                        "die Reisekostenabrechnung.").grid(
@@ -221,10 +221,10 @@ class App(tk.Tk):
         self.btn_heim.grid(row=1, column=2, sticky="w", pady=(6, 0))
         self.heim_var = tk.StringVar(value="")
         ttk.Label(kopf, textvariable=self.heim_var, foreground=stil.GEDAEMPFT,
-                  font=stil.schrift(8)).grid(
+                  font=stil.schrift(stil.PT_KLEIN)).grid(
             row=1, column=3, columnspan=3, sticky="w", padx=(12, 0),
             pady=(6, 0))
-        ttk.Label(kopf, foreground=stil.GEDAEMPFT, font=stil.schrift(8),
+        ttk.Label(kopf, foreground=stil.GEDAEMPFT, font=stil.schrift(stil.PT_KLEIN),
                   wraplength=900,
                   text="Ohne Heimatort: Touren wie bisher (Nahverkehr). "
                        "Mit Heimatort: eine Zeile je Tag; hat der Lkw "
@@ -256,7 +256,7 @@ class App(tk.Tk):
             ttk.Button(orte, text="Standard",
                        command=lambda s=schluessel: self.ordner_standard(s)
                        ).grid(row=zeile, column=3, padx=(4, 0), pady=(0, 3))
-        ttk.Label(orte, foreground=stil.GEDAEMPFT, font=stil.schrift(8),
+        ttk.Label(orte, foreground=stil.GEDAEMPFT, font=stil.schrift(stil.PT_KLEIN),
                   text="Abrechnungsstand, Ortscache und Einstellungen "
                        "bleiben im Datenordner Dokumente\\CardMaster LS."
                   ).grid(row=2, column=0, columnspan=4, sticky="w",
@@ -277,7 +277,7 @@ class App(tk.Tk):
             value="Noch keine Karte geladen.")
         ttk.Label(uebersicht, textvariable=self.uebersicht_var,
                   justify="left", wraplength=520,
-                  font=stil.schrift(9)).grid(
+                  font=stil.schrift(stil.PT_TEXT)).grid(
             row=0, column=0, sticky="w")
 
         wechsel = ttk.LabelFrame(unten, text="Ansicht wechseln",
@@ -304,7 +304,7 @@ class App(tk.Tk):
         unten.rowconfigure(1, weight=1)
         self.log_text = tk.Text(
             proto, height=5, state="disabled", wrap="word",
-            font=(stil.SCHRIFT_FEST, 9), background=stil.PANEL,
+            font=stil.schrift_fest(stil.PT_TEXT), background=stil.PANEL,
             foreground=stil.TEXT, relief="flat", borderwidth=0,
             padx=10, pady=8, insertbackground=stil.NAVY,
             selectbackground=stil.AUSWAHL, selectforeground=stil.ROT_DUNKEL)
@@ -361,7 +361,7 @@ class App(tk.Tk):
         kopf.columnconfigure(0, weight=1)
         ttk.Label(kopf, text="Spesenzettel (Reisekostenabrechnung)",
                   foreground=stil.NAVY,
-                  font=(stil.SCHRIFT, 15, "bold")).grid(row=0, column=0,
+                  font=stil.schrift(stil.PT_TITEL, True)).grid(row=0, column=0,
                                                        sticky="w")
         ttk.Button(kopf, text="Zur Startseite",
                    command=lambda: self.notiz.select(self.tab_start)).grid(
@@ -370,7 +370,7 @@ class App(tk.Tk):
             value="Datenquelle und Kopfdaten auf der Startseite. "
                   "Zeitraum je Blatt: 16. bis 15. des Folgemonats.")
         ttk.Label(rahmen, textvariable=self.spesen_info_var,
-                  foreground=stil.GEDAEMPFT, font=stil.schrift(9),
+                  foreground=stil.GEDAEMPFT, font=stil.schrift(stil.PT_TEXT),
                   wraplength=980).grid(
             row=1, column=0, sticky="w", padx=16, pady=(0, 8))
 
@@ -436,7 +436,7 @@ class App(tk.Tk):
         self.btn_hilfe.grid(row=0, column=3, padx=(8, 0))
         self.datei_var = tk.StringVar()
         ttk.Label(aktion, textvariable=self.datei_var,
-                  foreground=stil.GEDAEMPFT, font=stil.schrift(8)).grid(
+                  foreground=stil.GEDAEMPFT, font=stil.schrift(stil.PT_KLEIN)).grid(
             row=1, column=0, columnspan=4, sticky="w", pady=(5, 0))
         self._ordner_anzeigen()
 

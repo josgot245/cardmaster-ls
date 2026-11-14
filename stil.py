@@ -7,6 +7,12 @@ Die Farben orientieren sich an den Firmenfarben von LS Logistik:
   * Grün        #94C11C  (schmale Akzentlinie)
   * helle Flächen und dezente Rahmen für einen aufgeräumten Look.
 
+Schriften: bevorzugt wird die moderne Windows-11-Schrift „Segoe UI
+Variable Text“; fehlt sie (z. B. unter Windows 10), wird automatisch auf
+„Segoe UI“ und danach auf weitere Systemschriften zurückgefallen. Die
+Größen folgen einer festen Staffel (``PT_*``), damit Überschriften,
+Fließtext und Hinweise überall gleich groß sind.
+
 Alle Fenster rufen beim Start :func:`anwenden` auf. Die Stile gelten
 danach für alle ttk-Widgets der Anwendung.
 """
@@ -49,13 +55,77 @@ FARBEN = {
     "panel": PANEL,
 }
 
-SCHRIFT = "Segoe UI"
-SCHRIFT_FEST = "Consolas"
+# --------------------------------------------------------- Schriftgrößen
+# Feste Staffel in Punkten – gleiche Elemente sind überall gleich groß.
+PT_MINI = 7         # Achsenbeschriftung, Fußnoten
+PT_KLEIN = 8        # Hinweise, Untertitel, Metadaten
+PT_TEXT = 9         # Fließtext, Tabellenzellen, Beschriftungen
+PT_ABSCHNITT = 11   # Abschnitts- und Gruppenüberschriften
+PT_UNTERTITEL = 13  # Bereichsüberschrift (z. B. gewählter Tag)
+PT_TITEL = 15       # Seitenüberschrift
+PT_GROSS = 16       # Produktname, große Kennzahl
+PT_HERO = 17        # Überschrift der Startseite
+
+# ------------------------------------------------------- Schriftfamilien
+# Bevorzugt die modernere Windows-11-Schrift; fehlt sie, wird der Reihe
+# nach auf die nächste vorhandene Familie zurückgefallen.
+UI_FAMILIEN = ("Segoe UI Variable Text", "Segoe UI", "Tahoma", "Verdana")
+FEST_FAMILIEN = ("Cascadia Mono", "Consolas", "Courier New")
+STANDARD_UI = "Segoe UI"
+STANDARD_FEST = "Consolas"
+
+# Veraltete Namen – nur noch für Rückwärtskompatibilität vorhanden.
+SCHRIFT = STANDARD_UI
+SCHRIFT_FEST = STANDARD_FEST
+
+_familien = {}
 
 
-def schrift(groesse=9, fett=False):
+def _erste_familie(kandidaten, standard):
+    """Erste vorhandene Familie; ``(name, gemerkt)`` zurückgeben.
+
+    ``gemerkt`` ist ``False``, wenn noch kein Fenster existiert und die
+    Auswahl daher später erneut versucht werden soll.
+    """
+    try:
+        vorhanden = set(tkfont.families())
+    except (tk.TclError, RuntimeError, AttributeError):
+        return standard, False
+    for name in kandidaten:
+        if name in vorhanden:
+            return name, True
+    return standard, True
+
+
+def familie():
+    """Bevorzugte Schriftfamilie der Oberfläche."""
+    if "ui" not in _familien:
+        name, gemerkt = _erste_familie(UI_FAMILIEN, STANDARD_UI)
+        if not gemerkt:
+            return name
+        _familien["ui"] = name
+    return _familien["ui"]
+
+
+def familie_fest():
+    """Bevorzugte Festbreiten-Schriftfamilie (Protokoll, Zahlen)."""
+    if "fest" not in _familien:
+        name, gemerkt = _erste_familie(FEST_FAMILIEN, STANDARD_FEST)
+        if not gemerkt:
+            return name
+        _familien["fest"] = name
+    return _familien["fest"]
+
+
+def schrift(groesse=PT_TEXT, fett=False):
     """Schrift-Tupel für tkinter-Widgets."""
-    return (SCHRIFT, groesse, "bold") if fett else (SCHRIFT, groesse)
+    return (familie(), groesse, "bold") if fett else (familie(), groesse)
+
+
+def schrift_fest(groesse=PT_TEXT, fett=False):
+    """Festbreiten-Schrift-Tupel (Protokoll, ausgerichtete Zahlen)."""
+    fam = familie_fest()
+    return (fam, groesse, "bold") if fett else (fam, groesse)
 
 
 def _stile(wurzel):
@@ -65,45 +135,47 @@ def _stile(wurzel):
     except tk.TclError:
         pass
 
+    ui = familie()
+    fest = familie_fest()
+
     # Grundschriften (auch für tk-Widgets ohne eigenen font-Parameter)
     for name, groesse, fett in (
-            ("TkDefaultFont", 9, False),
-            ("TkTextFont", 9, False),
-            ("TkMenuFont", 9, False),
-            ("TkHeadingFont", 9, True),
-            ("TkCaptionFont", 9, False),
-            ("TkTooltipFont", 8, False)):
+            ("TkDefaultFont", PT_TEXT, False),
+            ("TkTextFont", PT_TEXT, False),
+            ("TkMenuFont", PT_TEXT, False),
+            ("TkHeadingFont", PT_TEXT, True),
+            ("TkCaptionFont", PT_TEXT, False),
+            ("TkTooltipFont", PT_KLEIN, False)):
         try:
             tkfont.nametofont(name).configure(
-                family=SCHRIFT, size=groesse,
+                family=ui, size=groesse,
                 weight="bold" if fett else "normal")
         except tk.TclError:
             pass
     try:
-        tkfont.nametofont("TkFixedFont").configure(
-            family=SCHRIFT_FEST, size=9)
+        tkfont.nametofont("TkFixedFont").configure(family=fest, size=PT_TEXT)
     except tk.TclError:
         pass
 
     # ---------------------------------------------------------- Flächen
     art.configure(".", background=SEITE, foreground=TEXT,
-                  font=(SCHRIFT, 9))
+                  font=(ui, PT_TEXT))
     for stil_name in ("TFrame", "TLabel", "TCheckbutton", "TRadiobutton",
                       "TLabelframe", "TLabelframe.Label"):
         art.configure(stil_name, background=SEITE, foreground=TEXT)
     art.configure("TLabelframe", bordercolor=RAND, lightcolor=RAND,
                   darkcolor=RAND, borderwidth=1, relief="solid")
     art.configure("TLabelframe.Label", foreground=NAVY,
-                  font=(SCHRIFT, 10, "bold"))
+                  font=(ui, PT_ABSCHNITT, "bold"))
     art.configure("TSeparator", background=RAND)
-    art.configure("TLabel", font=(SCHRIFT, 9))
+    art.configure("TLabel", font=(ui, PT_TEXT))
 
     # ---------------------------------------------------------- Knöpfe
     art.configure(
         "TButton", background=WEISS, foreground=NAVY,
         bordercolor=RAND, lightcolor=RAND, darkcolor=RAND,
         borderwidth=1, relief="solid", padding=(12, 7),
-        font=(SCHRIFT, 9))
+        font=(ui, PT_TEXT))
     art.map(
         "TButton",
         background=[("disabled", PANEL), ("pressed", "#E3E8F1"),
@@ -114,7 +186,7 @@ def _stile(wurzel):
         "Akzent.TButton", background=WEISS, foreground=ROT,
         bordercolor=ROT, lightcolor=ROT, darkcolor=ROT,
         borderwidth=1, relief="solid", padding=(14, 7),
-        font=(SCHRIFT, 9, "bold"))
+        font=(ui, PT_TEXT, "bold"))
     art.map(
         "Akzent.TButton",
         background=[("disabled", PANEL), ("pressed", "#F2D8D4"),
@@ -128,7 +200,7 @@ def _stile(wurzel):
     for stil_name in ("TEntry", "TCombobox", "TSpinbox"):
         art.configure(stil_name, fieldbackground=WEISS, foreground=TEXT,
                       bordercolor=RAND, lightcolor=RAND, darkcolor=RAND,
-                      insertcolor=NAVY, padding=(6, 5))
+                      insertcolor=NAVY, padding=(6, 5), font=(ui, PT_TEXT))
         art.map(stil_name,
                 bordercolor=[("focus", ROT)],
                 lightcolor=[("focus", ROT)],
@@ -148,7 +220,7 @@ def _stile(wurzel):
     art.configure("TNotebook.Tab", background=TAB_INAKTIV,
                   foreground=NAVY_HELL, bordercolor=TAB_INAKTIV,
                   lightcolor=TAB_INAKTIV, darkcolor=TAB_INAKTIV,
-                  padding=(18, 9), font=(SCHRIFT, 9, "bold"))
+                  padding=(18, 9), font=(ui, PT_TEXT, "bold"))
     art.map("TNotebook.Tab",
             background=[("selected", SEITE), ("active", "#F3F5F9")],
             foreground=[("selected", ROT), ("active", NAVY)],
@@ -160,7 +232,7 @@ def _stile(wurzel):
     # ---------------------------------------------------------- Tabellen
     art.configure("Treeview", background=WEISS, fieldbackground=WEISS,
                   foreground=TEXT, borderwidth=0, relief="flat",
-                  rowheight=27, font=(SCHRIFT, 9))
+                  rowheight=28, font=(ui, PT_TEXT))
     art.map("Treeview",
             background=[("selected", AUSWAHL)],
             foreground=[("selected", ROT_DUNKEL)])
@@ -168,7 +240,7 @@ def _stile(wurzel):
                   foreground=NAVY, bordercolor=RAND,
                   lightcolor=TAB_INAKTIV, darkcolor=TAB_INAKTIV,
                   relief="flat", borderwidth=0, padding=(8, 7),
-                  font=(SCHRIFT, 9, "bold"))
+                  font=(ui, PT_TEXT, "bold"))
     art.map("Treeview.Heading",
             background=[("active", "#E4E9F2")])
     try:

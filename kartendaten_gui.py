@@ -39,12 +39,12 @@ class KartendatenTab(ttk.Frame):
             value="Noch keine Karte geladen — Karte auslesen oder .ddd öffnen.")
         ttk.Label(kopf, textvariable=self.kopf_var,
                   foreground=stil.NAVY,
-                  font=(stil.SCHRIFT, 12, "bold")).grid(row=0, column=0,
-                                                       sticky="w")
+                  font=stil.schrift(stil.PT_UNTERTITEL, True)).grid(
+            row=0, column=0, sticky="w")
         self.hinweis_var = tk.StringVar(value="")
         ttk.Label(kopf, textvariable=self.hinweis_var,
                   foreground=stil.GEDAEMPFT,
-                  font=stil.schrift(8)).grid(row=1, column=0, sticky="w")
+                  font=stil.schrift(stil.PT_KLEIN)).grid(row=1, column=0, sticky="w")
 
         # --- Tagesliste ---------------------------------------------------
         links = ttk.LabelFrame(self, text="Tage", padding=(10, 8))
@@ -85,17 +85,17 @@ class KartendatenTab(ttk.Frame):
         self.tag_var = tk.StringVar(value="")
         ttk.Label(kopf_rechts, textvariable=self.tag_var,
                   foreground=stil.NAVY,
-                  font=(stil.SCHRIFT, 14, "bold")).grid(row=0, column=0,
+                  font=stil.schrift(stil.PT_UNTERTITEL, True)).grid(row=0, column=0,
                                                        sticky="w")
         self.gesamt_var = tk.StringVar(value="")
         ttk.Label(kopf_rechts, textvariable=self.gesamt_var,
                   foreground=stil.ROT,
-                  font=(stil.SCHRIFT, 16, "bold")).grid(row=0, column=1,
+                  font=stil.schrift(stil.PT_GROSS, True)).grid(row=0, column=1,
                                                        sticky="e")
         self.summe_var = tk.StringVar(value="")
         ttk.Label(rechts, textvariable=self.summe_var,
                   foreground=stil.GEDAEMPFT,
-                  font=stil.schrift(9)).grid(row=1, column=0, sticky="w",
+                  font=stil.schrift(stil.PT_TEXT)).grid(row=1, column=0, sticky="w",
                                              pady=(0, 6))
 
         self.zeit_canvas = tk.Canvas(rechts, height=146, highlightthickness=0,
@@ -124,7 +124,7 @@ class KartendatenTab(ttk.Frame):
                                                            padx=(0, 4))
         ttk.Label(meld_kopf, text="Verstöße und Ereignisse",
                   foreground=stil.NAVY,
-                  font=(stil.SCHRIFT, 10, "bold")).pack(side="left")
+                  font=stil.schrift(stil.PT_ABSCHNITT, True)).pack(side="left")
 
         self.meld_tree = ttk.Treeview(
             meld, show="headings", height=7,
@@ -305,7 +305,7 @@ class KartendatenTab(ttk.Frame):
                               fill="#C9D0DC")
                 c.create_text(x, y0 + hoehe + 15,
                               text="%02d" % stunde,
-                              font=stil.schrift(7), fill=stil.GEDAEMPFT)
+                              font=stil.schrift(stil.PT_MINI), fill=stil.GEDAEMPFT)
 
         # Aktivitätsbalken: ein durchgehender 24-Stunden-Streifen
         for von, bis, art in self._laeufe(profil):
@@ -343,7 +343,7 @@ class KartendatenTab(ttk.Frame):
         ]
         if s["unbekannt"]:
             eintraege.append((s["unbekannt"], "#ECEEF3", "Unbekannt"))
-        schrift = tkfont.Font(font=stil.schrift(8))
+        schrift = tkfont.Font(font=stil.schrift(stil.PT_KLEIN))
         x, y = links, y0 + hoehe + 36
         for wert, farbe, name in eintraege:
             text = "%s %s" % (name, kartendaten.hmm(wert))
@@ -353,13 +353,13 @@ class KartendatenTab(ttk.Frame):
             c.create_rectangle(x, y - 5, x + 10, y + 5,
                                fill=farbe, outline=stil.RAND)
             c.create_text(x + 16, y, anchor="w", text=text,
-                          font=stil.schrift(8), fill=stil.TEXT)
+                          font=stil.schrift(stil.PT_KLEIN), fill=stil.TEXT)
             x += breite_text + 14
 
         if s["unbekannt"]:
             c.create_text(links + breite, y + 20, anchor="e",
                           text="* nach dem letzten Auslesen unbekannt",
-                          font=stil.schrift(7), fill=stil.GRAU)
+                          font=stil.schrift(stil.PT_MINI), fill=stil.GRAU)
 
     def _hover(self, event):
         c = self.zeit_canvas
@@ -390,7 +390,7 @@ class KartendatenTab(ttk.Frame):
         c.create_line(xp, 30, xp, 76, fill=stil.NAVY,
                       dash=(2, 2), tags="hover")
         c.create_text(c.winfo_width() - 8, 8, anchor="ne", text=text,
-                      font=stil.schrift(8, True), fill=stil.NAVY,
+                      font=stil.schrift(stil.PT_KLEIN, True), fill=stil.NAVY,
                       tags="hover")
 
     def _hover_loeschen(self):
@@ -414,7 +414,7 @@ class KartendatenTab(ttk.Frame):
         # Kreis und Legende als eine Gruppe mittig im verfügbaren Platz
         # anordnen (der Canvas ist so breit wie die rechte Seite).
         r, luecke = 94, 38
-        schrift = tkfont.Font(font=stil.schrift(9))
+        schrift = tkfont.Font(font=stil.schrift(stil.PT_TEXT))
         texte = ["%-13s %5s h   %3d %%"
                  % (name, kartendaten.hmm(wert),
                     round(100 * wert / 1440.0))
@@ -439,9 +439,9 @@ class KartendatenTab(ttk.Frame):
         c.create_oval(cx - r, cy - r, cx + r, cy + r,
                       outline=stil.RAND)
         c.create_text(cx, cy - 8, text="24 h",
-                      font=(stil.SCHRIFT, 13, "bold"), fill=stil.NAVY)
+                      font=stil.schrift(stil.PT_UNTERTITEL, True), fill=stil.NAVY)
         c.create_text(cx, cy + 12, text="Tagesanteile",
-                      font=stil.schrift(7), fill=stil.GRAU)
+                      font=stil.schrift(stil.PT_MINI), fill=stil.GRAU)
 
         # Legende
         x = cx + r + luecke
@@ -491,12 +491,12 @@ class RechtsgrundlagenTab(ttk.Frame):
             value="Noch keine Karte geladen — Karte auslesen oder .ddd öffnen.")
         ttk.Label(kopf, textvariable=self.kopf_var,
                   foreground=stil.NAVY,
-                  font=(stil.SCHRIFT, 12, "bold")).grid(row=0, column=0,
-                                                       sticky="w")
+                  font=stil.schrift(stil.PT_UNTERTITEL, True)).grid(
+            row=0, column=0, sticky="w")
         self.hinweis_var = tk.StringVar(value="")
         ttk.Label(kopf, textvariable=self.hinweis_var,
                   foreground=stil.GEDAEMPFT,
-                  font=stil.schrift(8)).grid(row=1, column=0, sticky="w")
+                  font=stil.schrift(stil.PT_KLEIN)).grid(row=1, column=0, sticky="w")
 
         tabelle = ttk.LabelFrame(self, text="Kennzahlen der geladenen Karte",
                                  padding=(10, 8))
@@ -526,12 +526,12 @@ class RechtsgrundlagenTab(ttk.Frame):
 
         ttk.Label(self, text="Rechtsgrundlagen und Grenzwerte",
                   foreground=stil.NAVY,
-                  font=(stil.SCHRIFT, 10, "bold")).grid(row=2, column=0,
+                  font=stil.schrift(stil.PT_ABSCHNITT, True)).grid(row=2, column=0,
                                                        sticky="w",
                                                        pady=(12, 4))
         text = tk.Text(self, height=10, wrap="word", relief="flat",
                        background=stil.PANEL, foreground=stil.TEXT,
-                       font=stil.schrift(8), padx=12, pady=10,
+                       font=stil.schrift(stil.PT_TEXT), padx=12, pady=10,
                        borderwidth=0, insertbackground=stil.NAVY,
                        selectbackground=stil.AUSWAHL,
                        selectforeground=stil.ROT_DUNKEL)
@@ -539,7 +539,7 @@ class RechtsgrundlagenTab(ttk.Frame):
         tbalken = ttk.Scrollbar(self, orient="vertical", command=text.yview)
         tbalken.grid(row=3, column=1, sticky="ns")
         text.configure(yscrollcommand=tbalken.set)
-        text.tag_configure("titel", font=(stil.SCHRIFT, 9, "bold"),
+        text.tag_configure("titel", font=stil.schrift(stil.PT_ABSCHNITT, True),
                            foreground=stil.NAVY, spacing1=8, spacing3=2)
         text.tag_configure("text", spacing3=6, lmargin1=2)
         for titel, inhalt in kartendaten.RECHTSGRUNDLAGEN:
