@@ -260,11 +260,37 @@ def update_verfuegbar(neu, alt=VERSION):
     return _versions_teile(neu) > _versions_teile(alt)
 
 
+def _datum_anzeigen(iso):
+    """ISO-Zeitstempel ('2026-11-16T20:51:47Z') als '16.11.2026'."""
+    if not iso:
+        return ""
+    try:
+        text = str(iso).replace("Z", "+00:00")
+        return datetime.fromisoformat(text).astimezone().strftime("%d.%m.%Y")
+    except (ValueError, TypeError):
+        return ""
+
+
+def _groesse_anzeigen(bytes_):
+    """Byte-Groesse als lesbaren Text: 27914289 -> '26,6 MB'."""
+    try:
+        wert = float(bytes_)
+    except (TypeError, ValueError):
+        return ""
+    if wert <= 0:
+        return ""
+    if wert >= 1024 * 1024:
+        return ("%.1f MB" % (wert / (1024 * 1024))).replace(".", ",")
+    return ("%.0f KB" % (wert / 1024)).replace(".", ",")
+
+
 def hole_neueste_version(timeout=6.0):
     """Neueste Veröffentlichung des GitHub-Repositories abfragen.
 
-    Rückgabe: dict mit 'version' (z. B. '1.4.6'), 'seite' (Webadresse der
-    Veröffentlichung) und 'dateien' (Namen der Anhänge). Wirft bei
+    Rückgabe: dict mit 'version' (z. B. 'v1.4.6'), 'seite' (Webadresse der
+    Veröffentlichung), 'datum' (Veröffentlichungsdatum, ISO) und 'dateien'
+    (Namen der Anhänge). Zusätzlich 'setup' mit Name, Groesse (Byte) und
+    'groesse_text' des Setup-Anhangs, sofern vorhanden. Wirft bei
     Verbindungsfehlern eine Ausnahme.
     """
     url = "https://api.github.com/repos/%s/releases/latest" % GITHUB_REPO
@@ -274,10 +300,30 @@ def hole_neueste_version(timeout=6.0):
     with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:
         daten = json.loads(antwort.read().decode("utf-8"))
     version = str(daten.get("tag_name") or daten.get("name") or "").strip()
+    anhaenge = daten.get("assets") or []
+    setup = None
+    for a in anhaenge:
+        name = a.get("name") or ""
+        if name.lower().endswith(".exe"):
+            setup = {
+                "name": name,
+                "groesse": a.get("size") or 0,
+                "groesse_text": _groesse_anzeigen(a.get("size")),
+            }
+            break
+    if setup is None and anhaenge:
+        a = anhaenge[0]
+        setup = {
+            "name": a.get("name") or "",
+            "groesse": a.get("size") or 0,
+            "groesse_text": _groesse_anzeigen(a.get("size")),
+        }
     return {
         "version": version,
         "seite": daten.get("html_url") or RELEASES_SEITE,
-        "dateien": [a.get("name", "") for a in (daten.get("assets") or [])],
+        "datum": daten.get("published_at") or daten.get("created_at") or "",
+        "dateien": [a.get("name", "") for a in anhaenge],
+        "setup": setup,
     }
 
 

@@ -388,15 +388,17 @@ class App(tk.Tk):
         if info:
             self._update_url = info.get("seite") or spesen_lib.RELEASES_SEITE
             self.update_var.set(
-                "Neue Version %s verfügbar — Sie nutzen %s."
-                % (info.get("version", "?"), spesen_lib.VERSION))
+                "Neue Version %s verfügbar%s — Sie nutzen %s."
+                % (info.get("version", "?"),
+                   self._update_details(info), spesen_lib.VERSION))
             self.update_frame.configure(highlightbackground=stil.ROT,
                                         highlightcolor=stil.ROT)
             self.update_punkt.configure(foreground=stil.ROT)
             self.update_label.configure(foreground=stil.ROT_DUNKEL)
             self.btn_update.grid()
-            self.log("Neue Version verfügbar: %s (%s)"
-                     % (info.get("version", "?"), self._update_url))
+            self.log("Neue Version verfügbar: %s%s (%s)"
+                     % (info.get("version", "?"), self._update_details(info),
+                        self._update_url))
         elif fehler:
             if manuell:
                 self.update_var.set(
@@ -410,6 +412,19 @@ class App(tk.Tk):
             if manuell:
                 self.log("Update-Prüfung: Version %s ist aktuell."
                          % spesen_lib.VERSION)
+
+    @staticmethod
+    def _update_details(info):
+        """Zusatzangaben zum Release: ' (16.11.2026, 26,6 MB)'."""
+        teile = []
+        datum = spesen_lib._datum_anzeigen(info.get("datum"))
+        if datum:
+            teile.append(datum)
+        setup = info.get("setup") or {}
+        groesse = setup.get("groesse_text")
+        if groesse:
+            teile.append(groesse)
+        return " (%s)" % ", ".join(teile) if teile else ""
 
     def update_oeffnen(self):
         """Die Veröffentlichungsseite mit dem Setup im Browser öffnen."""
