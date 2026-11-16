@@ -51,6 +51,8 @@ class App(tk.Tk):
         self.minsize(1080, 720)
         stil.anwenden(self)
         self._fenster_icon()
+        self._update_thread = None            # Hintergrund-Update-Prüfung
+        self._update_url = spesen_lib.RELEASES_SEITE
         self._oberflaeche()
         self.info = None                      # Ergebnis von spesen_lib.lade_ddd
         self.kartenstaende = spesen_lib.load_state()["karten"]
@@ -58,6 +60,10 @@ class App(tk.Tk):
         self._heim = None                     # Heimatort/Wohnort (lat, lon)
         self._heim_text = ""                  # zuletzt geprüfter Heimatort-Text
         self._fern_cache = None               # zuletzt erzeugte Tageszeilen
+        self._nacht_im_lkw = None             # Nahverkehr: Nächte im Lkw
+        # Beim Start einmalig nach einer neueren Version suchen.
+        if spesen_lib.update_pruefen_aktiv():
+            self.after(800, self.update_suchen)
 
     def _fenster_icon(self):
         """Fenster- und Taskleistensymbol (cardmaster.ico)."""
@@ -151,7 +157,7 @@ class App(tk.Tk):
 
     def _startseite(self, rahmen):
         rahmen.columnconfigure(0, weight=1)
-        rahmen.rowconfigure(6, weight=1)
+        rahmen.rowconfigure(7, weight=1)
 
         ttk.Label(rahmen, text="Fahrerkarte und Spesenzettel",
                   foreground=stil.NAVY,
@@ -164,10 +170,13 @@ class App(tk.Tk):
                        "die Reisekostenabrechnung.").grid(
             row=1, column=0, sticky="w", padx=16, pady=(0, 10))
 
+        # --- Update-Hinweis ----------------------------------------------
+        self._update_leiste(rahmen, row=2)
+
         # --- Datenquelle -------------------------------------------------
         quelle = ttk.LabelFrame(rahmen, text="Datenquelle",
                                 padding=(14, 10))
-        quelle.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 8))
+        quelle.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 8))
         quelle.columnconfigure(3, weight=1)
         self.btn_karte = ttk.Button(
             quelle, text="Karte auslesen (USB-Kartenleser)",
@@ -188,12 +197,12 @@ class App(tk.Tk):
             value="Noch keine Daten geladen — Karte auslesen oder .ddd öffnen.")
         ttk.Label(rahmen, textvariable=self.info_var, justify="left",
                   wraplength=1000, foreground=stil.TEXT).grid(
-            row=3, column=0, sticky="w", padx=16, pady=(0, 8))
+            row=4, column=0, sticky="w", padx=16, pady=(0, 8))
 
         # --- Kopfdaten ----------------------------------------------------
         kopf = ttk.LabelFrame(rahmen, text="Kopfdaten für das Formular",
                               padding=(14, 10))
-        kopf.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 8))
+        kopf.grid(row=5, column=0, sticky="ew", padx=16, pady=(0, 8))
         kopf.columnconfigure(1, weight=1)
         ttk.Label(kopf, text="Name:").grid(row=0, column=0, sticky="w")
         self.name_var = tk.StringVar()
@@ -208,9 +217,9 @@ class App(tk.Tk):
         ttk.Entry(kopf, textvariable=self.pnr_var, width=10).grid(
             row=0, column=5, sticky="w", padx=4)
 
-        # Heimatort: ohne Angabe werden die Touren wie bisher abgerechnet.
-        # Mit Heimatort entstehen Tageszeilen; Nächte außerhalb des
-        # Heimatorts bekommen den 00:00-Schnitt (Fernverkehr).
+        # Heimatort: mit Heimatort entsteht je Tag eine Zeile
+        # „Heimatort – Zwischenort – Heimatort“. Ob Nah- oder Fernverkehr
+        # gilt, wird auf der Seite „Spesenzettel“ gewählt.
         ttk.Label(kopf, text="Heimatort (PLZ oder Ort):").grid(
             row=1, column=0, sticky="w", pady=(6, 0))
         self.heimat_var = tk.StringVar()
@@ -226,10 +235,11 @@ class App(tk.Tk):
             pady=(6, 0))
         ttk.Label(kopf, foreground=stil.GEDAEMPFT, font=stil.schrift(stil.PT_KLEIN),
                   wraplength=900,
-                  text="Ohne Heimatort: Touren wie bisher (Nahverkehr). "
-                       "Mit Heimatort: eine Zeile je Tag; hat der Lkw "
-                       "nachts nicht am Heimatort gestanden, wird der Tag "
-                       "um 00:00 geteilt (Fernverkehr).").grid(
+                  text="Mit Heimatort entsteht für jeden Tag eine Zeile "
+                       "„Heimatort – Zwischenort – Heimatort“. Ob Nah- oder "
+                       "Fernverkehr gilt, wird auf der Seite „Spesenzettel“ "
+                       "gewählt; im Nahverkehr wird bei Nächten außerhalb "
+                       "des Heimatorts nachgefragt.").grid(
             row=2, column=0, columnspan=6, sticky="w", pady=(4, 0))
 
         # --- Speicherorte -------------------------------------------------
@@ -237,7 +247,7 @@ class App(tk.Tk):
         # Spesenzettel-PDFs koennen getrennt umgestellt werden.
         orte = ttk.LabelFrame(rahmen, text="Speicherorte",
                               padding=(14, 10))
-        orte.grid(row=5, column=0, sticky="ew", padx=16, pady=(0, 8))
+        orte.grid(row=6, column=0, sticky="ew", padx=16, pady=(0, 8))
         orte.columnconfigure(1, weight=1)
         self.ddd_ordner_var = tk.StringVar()
         self.pdf_ordner_var = tk.StringVar()
@@ -265,7 +275,7 @@ class App(tk.Tk):
 
         # --- Übersicht und Wechsel zu den Ansichten ----------------------
         unten = ttk.Frame(rahmen)
-        unten.grid(row=6, column=0, sticky="nsew", padx=16)
+        unten.grid(row=7, column=0, sticky="nsew", padx=16)
         unten.columnconfigure(0, weight=1)
         unten.rowconfigure(1, weight=1)
 
@@ -313,6 +323,111 @@ class App(tk.Tk):
                                    command=self.log_text.yview)
         log_balken.grid(row=0, column=1, sticky="ns")
         self.log_text.configure(yscrollcommand=log_balken.set)
+
+    # ------------------------------------------------------------- Updates
+
+    def _update_leiste(self, rahmen, row):
+        """Hinweisleiste oben auf der Startseite (Version und Update)."""
+        self.update_frame = tk.Frame(rahmen, background=stil.HINTERGRUND,
+                                     highlightbackground=stil.RAND,
+                                     highlightthickness=1)
+        self.update_frame.grid(row=row, column=0, sticky="ew", padx=16,
+                               pady=(0, 10))
+        self.update_frame.columnconfigure(2, weight=1)
+        self.update_punkt = tk.Label(
+            self.update_frame, text="●", background=stil.HINTERGRUND,
+            foreground=stil.GEDAEMPFT, font=stil.schrift(stil.PT_TEXT))
+        self.update_punkt.grid(row=0, column=0, padx=(12, 6), pady=7)
+        self.update_var = tk.StringVar(
+            value="Version %s" % spesen_lib.VERSION)
+        self.update_label = tk.Label(
+            self.update_frame, textvariable=self.update_var,
+            background=stil.HINTERGRUND, foreground=stil.TEXT,
+            font=stil.schrift(stil.PT_TEXT), anchor="w", justify="left")
+        self.update_label.grid(row=0, column=1, columnspan=2, sticky="w",
+                               pady=7)
+        self.btn_update = ttk.Button(self.update_frame,
+                                     text="Zum Download",
+                                     style="Akzent.TButton",
+                                     command=self.update_oeffnen)
+        self.btn_update.grid(row=0, column=3, padx=(8, 4), pady=5)
+        self.btn_update.grid_remove()
+        ttk.Button(self.update_frame, text="Nach Updates suchen",
+                   command=lambda: self.update_suchen(manuell=True)).grid(
+            row=0, column=4, padx=(4, 12), pady=5)
+        self.update_pruef_var = tk.BooleanVar(
+            value=spesen_lib.update_pruefen_aktiv())
+        tk.Checkbutton(
+            self.update_frame,
+            text="beim Start automatisch nach Updates suchen",
+            variable=self.update_pruef_var,
+            command=self.update_pruefen_umschalten,
+            background=stil.HINTERGRUND, activebackground=stil.HINTERGRUND,
+            foreground=stil.TEXT, selectcolor=stil.WEISS,
+            font=stil.schrift(stil.PT_KLEIN), borderwidth=0,
+            highlightthickness=0).grid(
+            row=1, column=1, columnspan=4, sticky="w", padx=(0, 12),
+            pady=(0, 7))
+
+    def update_suchen(self, manuell=False):
+        """Im Hintergrund nach einer neueren Version auf GitHub suchen."""
+        if self._update_thread is not None and self._update_thread.is_alive():
+            return
+        if manuell:
+            self.update_var.set("Suche nach Updates …")
+            self.update_punkt.configure(foreground=stil.GEDAEMPFT)
+        self._update_thread = threading.Thread(
+            target=self._update_lauf, args=(manuell,), daemon=True)
+        self._update_thread.start()
+
+    def _update_lauf(self, manuell):
+        info, fehler = spesen_lib.pruefe_update()
+        self.after(0, self._update_fertig, info, fehler, manuell)
+
+    def _update_fertig(self, info, fehler, manuell):
+        if info:
+            self._update_url = info.get("seite") or spesen_lib.RELEASES_SEITE
+            self.update_var.set(
+                "Neue Version %s verfügbar — Sie nutzen %s."
+                % (info.get("version", "?"), spesen_lib.VERSION))
+            self.update_frame.configure(highlightbackground=stil.ROT,
+                                        highlightcolor=stil.ROT)
+            self.update_punkt.configure(foreground=stil.ROT)
+            self.update_label.configure(foreground=stil.ROT_DUNKEL)
+            self.btn_update.grid()
+            self.log("Neue Version verfügbar: %s (%s)"
+                     % (info.get("version", "?"), self._update_url))
+        elif fehler:
+            if manuell:
+                self.update_var.set(
+                    "Update-Prüfung nicht möglich (%s)." % fehler)
+            else:
+                self.update_var.set("Version %s" % spesen_lib.VERSION)
+            self.update_punkt.configure(foreground=stil.GRAU)
+        else:
+            self.update_var.set("Version %s — aktuell." % spesen_lib.VERSION)
+            self.update_punkt.configure(foreground=stil.GRUEN)
+            if manuell:
+                self.log("Update-Prüfung: Version %s ist aktuell."
+                         % spesen_lib.VERSION)
+
+    def update_oeffnen(self):
+        """Die Veröffentlichungsseite mit dem Setup im Browser öffnen."""
+        try:
+            os.startfile(self._update_url)
+        except OSError as e:
+            messagebox.showerror("Update", str(e))
+
+    def update_pruefen_umschalten(self):
+        """Automatische Update-Prüfung ein- oder ausschalten."""
+        aktiv = bool(self.update_pruef_var.get())
+        try:
+            spesen_lib.setze_update_pruefen(aktiv)
+        except OSError as e:
+            self.log("Einstellung nicht gespeichert: %s" % e)
+            return
+        self.log("Automatische Update-Prüfung: %s"
+                 % ("an" if aktiv else "aus"))
 
     # ---------------------------------------------------------- Speicherorte
 
@@ -379,8 +494,54 @@ class App(tk.Tk):
                                  padding=(14, 10))
         fahrten.grid(row=3, column=0, sticky="nsew", padx=16, pady=(0, 8))
         fahrten.columnconfigure(0, weight=1)
-        fahrten.rowconfigure(0, weight=1)
+        fahrten.rowconfigure(1, weight=1)
         self.fahrten_frame = fahrten
+
+        # Zeitraum-Auswahl: genau eine Abrechnungsperiode oder alle offenen
+        steuer = ttk.Frame(fahrten)
+        steuer.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        zeile1 = ttk.Frame(steuer)
+        zeile1.pack(fill="x")
+        zeile2 = ttk.Frame(steuer)
+        zeile2.pack(fill="x", pady=(5, 0))
+        ttk.Label(zeile1, text="Zeitraum:").pack(side="left")
+        self.zeitraum_var = tk.StringVar()
+        self.zeitraum_combo = ttk.Combobox(
+            zeile1, textvariable=self.zeitraum_var, state="readonly",
+            width=30, values=["Alle offenen Zeiträume"])
+        self.zeitraum_combo.pack(side="left", padx=(6, 0))
+        self.zeitraum_combo.bind("<<ComboboxSelected>>",
+                                 lambda e: self._tabelle_aktualisieren())
+        ttk.Label(zeile1, foreground=stil.GEDAEMPFT,
+                  font=stil.schrift(stil.PT_KLEIN),
+                  text="(16. bis 15. des Folgemonats)").pack(
+            side="left", padx=(8, 0))
+        self._zeitraum_map = {"Alle offenen Zeiträume": None}
+
+        self.force_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            zeile1,
+            text="Abrechnungsstand ignorieren (Ergänzungsblatt)",
+            variable=self.force_var,
+            command=self._tabelle_aktualisieren).pack(side="left", padx=(16, 0))
+
+        # Abrechnungsart: Nah- oder Fernverkehr. Sie bestimmt, wie Nächte
+        # außerhalb des Heimatorts behandelt werden (siehe unten).
+        ttk.Label(zeile2, text="Abrechnungsart:").pack(side="left")
+        self.verkehr_var = tk.StringVar(value="fernverkehr")
+        ttk.Radiobutton(zeile2, text="Fernverkehr (Nacht im Lkw)",
+                        value="fernverkehr", variable=self.verkehr_var,
+                        command=self._verkehrsart_geaendert).pack(
+            side="left", padx=(6, 0))
+        ttk.Radiobutton(zeile2, text="Nahverkehr (täglich zuhause)",
+                        value="nahverkehr", variable=self.verkehr_var,
+                        command=self._verkehrsart_geaendert).pack(
+            side="left", padx=(10, 0))
+        ttk.Label(zeile2, foreground=stil.GEDAEMPFT,
+                  font=stil.schrift(stil.PT_KLEIN),
+                  text="(Nahverkehr: fragt je Nacht nach, wenn der Lkw "
+                       "nicht am Heimatort stand)").pack(
+            side="left", padx=(8, 0))
 
         spalten = (("nr", "#", 36, "center"),
                    ("datum", "Datum", 90, "center"),
@@ -396,23 +557,15 @@ class App(tk.Tk):
         for sid, titel, breite, anker in spalten:
             self.tree.heading(sid, text=titel)
             self.tree.column(sid, width=breite, anchor=anker)
-        self.tree.grid(row=0, column=0, sticky="nsew")
+        self.tree.grid(row=1, column=0, sticky="nsew")
         balken = ttk.Scrollbar(fahrten, orient="vertical",
                                command=self.tree.yview)
-        balken.grid(row=0, column=1, sticky="ns")
+        balken.grid(row=1, column=1, sticky="ns")
         self.tree.configure(yscrollcommand=balken.set)
 
-        self.force_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            fahrten,
-            text="Abrechnungsstand ignorieren — alle gespeicherten Fahrten "
-                 "neu erstellen (Ergänzungsblatt)",
-            variable=self.force_var,
-            command=self._tabelle_aktualisieren).grid(
-            row=1, column=0, sticky="w", pady=(6, 0))
         self.summe_var = tk.StringVar(value="")
         ttk.Label(fahrten, textvariable=self.summe_var).grid(
-            row=2, column=0, sticky="w")
+            row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         # --- Aktionen -----------------------------------------------------
         aktion = ttk.Frame(rahmen)
@@ -553,7 +706,29 @@ class App(tk.Tk):
         # Heimatort (Wohnort) je Karte: einmal geprüft, gilt er auch beim
         # nächsten Lesen der Karte wieder.
         heim = ks.get("heimat") or {}
+        if heim.get("lat") is None:
+            # Kein Heimatort für diese Kartennummer gespeichert: von einer
+            # anderen Karte desselben Fahrers übernehmen. So bleibt der
+            # Wohnort erhalten, wenn die Karte neu gelesen wird und dabei
+            # eine andere Kartennummer gemeldet wird.
+            for andere_nr, andere in self.kartenstaende.items():
+                if andere_nr == info["kartennummer"]:
+                    continue
+                if (andere.get("name") or "").strip().lower() != \
+                        (info.get("name") or "").strip().lower():
+                    continue
+                h = andere.get("heimat") or {}
+                if h.get("lat") is not None:
+                    heim = h
+                    spesen_lib.speichere_heimat(
+                        info["kartennummer"], h.get("text", ""),
+                        (h["lat"], h["lon"]))
+                    self.log("Heimatort von Karte %s übernommen: %s"
+                             % (andere_nr, h.get("text", "")))
+                    break
         self._fern_cache = None
+        self._nacht_im_lkw = None
+        self.verkehr_var.set(ks.get("verkehrsart") or "fernverkehr")
         self._heim = None
         self._heim_text = ""
         self.heimat_var.set("")
@@ -565,6 +740,10 @@ class App(tk.Tk):
             self.heim_var.set(
                 "Heimatort: %s (%.4f, %.4f) — Tageszeilen"
                 % (self._heim_text, heim["lat"], heim["lon"]))
+        else:
+            self.heim_var.set(
+                "Kein Heimatort — Touren (Start–Ziel). Für „Heimatort – "
+                "Zwischenort – Heimatort“ Wohnort eintragen und „Prüfen“.")
 
         zeilen = [
             "Karte %s — %s — gültig bis %s%s"
@@ -674,19 +853,34 @@ class App(tk.Tk):
                 self._fern_cache = spesen_lib.fernverkehr_zeilen(
                     self.info, self._heim, log=self.log,
                     heimat_text=spesen_lib.heimat_anzeigename(
-                        self._heim_text, self._heim, log=self.log))
+                        self._heim_text, self._heim, log=self.log),
+                    nacht_im_lkw=self._nacht_im_lkw)
             except Exception as e:
                 self.log("FEHLER bei den Tageszeilen: %s" % e)
                 self._fern_cache = []
         return self._fern_cache
 
-    def _anzeige(self):
+    def _basiszeilen(self):
+        """Alle Zeilen der Karte (Tageszeilen oder Touren), ohne Filter."""
         if not self.info:
             return []
         if self._heim is not None:
-            zeilen = list(self._tageszeilen())
-        else:
-            zeilen = list(self.info["touren"])
+            return list(self._tageszeilen())
+        return list(self.info["touren"])
+
+    def _gewaehlter_zeitraum(self):
+        """(von, bis) der Zeitraum-Auswahl oder None (alle offenen)."""
+        return self._zeitraum_map.get(self.zeitraum_var.get())
+
+    def _anzeige(self):
+        zeilen = self._basiszeilen()
+        if not zeilen:
+            return []
+        zeitraum = self._gewaehlter_zeitraum()
+        if zeitraum is not None:
+            return spesen_lib.leere_raender_entfernen(
+                [z for z in zeilen
+                 if spesen_lib.abrechnungsperiode(z["tag"]) == zeitraum])
         letzte = self.kartenstaende.get(
             self.info["kartennummer"], {}).get("letzte_zeile")
         if self.force_var.get() or not letzte:
@@ -694,10 +888,92 @@ class App(tk.Tk):
         return spesen_lib.leere_raender_entfernen(
             spesen_lib.neue_fahrten(zeilen, letzte))
 
+    def _perioden_aktualisieren(self):
+        """Auswahlliste der Abrechnungszeiträume (16.–15.) füllen."""
+        zeilen = self._basiszeilen()
+        perioden = sorted({spesen_lib.abrechnungsperiode(z["tag"])
+                           for z in zeilen if not z.get("leer")})
+        werte = ["Alle offenen Zeiträume"]
+        self._zeitraum_map = {werte[0]: None}
+        for von, bis in reversed(perioden):
+            label = "%s – %s" % (spesen_lib._fmt(von), spesen_lib._fmt(bis))
+            werte.append(label)
+            self._zeitraum_map[label] = (von, bis)
+        alt = self.zeitraum_var.get()
+        self.zeitraum_combo["values"] = werte
+        self.zeitraum_var.set(alt if alt in self._zeitraum_map else werte[0])
+
+    def _verkehrsart_geaendert(self):
+        """Nah-/Fernverkehr gewechselt: merken und Vorschau neu berechnen."""
+        art = self.verkehr_var.get()
+        self._nacht_im_lkw = None
+        self._fern_cache = None
+        if self.info:
+            try:
+                spesen_lib.speichere_kartenwert(
+                    self.info["kartennummer"], "verkehrsart", art)
+            except OSError as e:
+                self.log("Einstellung nicht gespeichert: %s" % e)
+        self.log("Abrechnungsart: %s"
+                 % ("Fernverkehr" if art == "fernverkehr" else "Nahverkehr"))
+        self._tabelle_aktualisieren()
+
+    def _naechte_fragen(self, naechte):
+        """Nahverkehr: je Nacht fragen, ob sie im Lkw verbracht wurde.
+
+        Rückgabe: dict {(vortag, folgetag): True/False} oder None, wenn
+        die Rückfrage abgebrochen wurde.
+        """
+        fenster = tk.Toplevel(self)
+        fenster.title("Nächte außerhalb des Heimatorts")
+        fenster.transient(self)
+        fenster.resizable(False, False)
+        fenster.grab_set()
+        rahmen = ttk.Frame(fenster, padding=14)
+        rahmen.pack(fill="both", expand=True)
+        ttk.Label(rahmen, justify="left", wraplength=470,
+                  text="Der Lkw stand in diesen Nächten nicht am Heimatort "
+                       "(%s).\nBitte die Nächte abwählen, die zuhause "
+                       "verbracht wurden." % (self._heim_text or "?")).pack(
+            anchor="w", pady=(0, 8))
+        eintraege = []
+        for n in naechte:
+            var = tk.BooleanVar(value=True)
+            ttk.Checkbutton(
+                rahmen,
+                text="Nacht %s → %s" % (spesen_lib._fmt(n["vor"]),
+                                        spesen_lib._fmt(n["nach"])),
+                variable=var).pack(anchor="w")
+            eintraege.append((n, var))
+        ergebnis = {"ok": False}
+
+        def uebernehmen():
+            ergebnis["ok"] = True
+            fenster.destroy()
+
+        knoepfe = ttk.Frame(rahmen)
+        knoepfe.pack(fill="x", pady=(12, 0))
+        ttk.Button(knoepfe, text="Übernehmen", style="Akzent.TButton",
+                   command=uebernehmen).pack(side="right")
+        ttk.Button(knoepfe, text="Abbrechen",
+                   command=fenster.destroy).pack(side="right", padx=(0, 8))
+        fenster.wait_window()
+        if not ergebnis["ok"]:
+            return None
+        return {(n["vor"].isoformat(), n["nach"].isoformat()): bool(var.get())
+                for n, var in eintraege}
+
     def heimat_pruefen(self):
         """Heimatort (Wohnort) in Koordinaten übersetzen (im Hintergrund)."""
         text = self.heimat_var.get().strip()
         if not text:
+            if self._heim is not None and not messagebox.askyesno(
+                    "Heimatort entfernen",
+                    "Der gespeicherte Heimatort „%s“ wird entfernt.\n\n"
+                    "Danach werden nur noch Fahrten (Start–Ziel) "
+                    "abgerechnet.\n\nFortsetzen?" % self._heim_text):
+                self.heimat_var.set(self._heim_text)
+                return
             self._heim = None
             self._heim_text = ""
             self._fern_cache = None
@@ -751,6 +1027,7 @@ class App(tk.Tk):
         self.log("FEHLER beim Prüfen des Heimatorts: %s" % meldung)
 
     def _tabelle_aktualisieren(self):
+        self._perioden_aktualisieren()
         for iid in self.tree.get_children():
             self.tree.delete(iid)
         zeilen = self._anzeige()
@@ -839,9 +1116,11 @@ class App(tk.Tk):
                 "Der Heimatort wurde geändert. Bitte zuerst „Prüfen“ "
                 "wählen, damit Vorschau und Spesenzettel übereinstimmen.")
             return
-        if self._heim is not None and self.force_var.get():
+        if self._heim is not None and self.force_var.get() \
+                and self._gewaehlter_zeitraum() is None:
             perioden = sorted({spesen_lib.abrechnungsperiode(t["tag"])
-                               for t in self._tageszeilen()})
+                               for t in self._basiszeilen()
+                               if not t.get("leer")})
             if len(perioden) > 1 and not messagebox.askyesno(
                     "Ergänzungsblätter",
                     "Der Abrechnungsstand wird ignoriert. Es würden %d "
@@ -851,11 +1130,25 @@ class App(tk.Tk):
                                       spesen_lib._fmt(bis))
                         for von, bis in perioden))):
                 return
+        nacht_im_lkw = None
+        if self._heim is not None and self.verkehr_var.get() == "nahverkehr":
+            if self._nacht_im_lkw is None:
+                naechte = spesen_lib.naechte_ausser_heimat(
+                    self.info, self._heim, log=self.log)
+                if naechte:
+                    self._nacht_im_lkw = self._naechte_fragen(naechte)
+                    if self._nacht_im_lkw is None:
+                        return
+                    self._fern_cache = None
+                    self._tabelle_aktualisieren()
+            nacht_im_lkw = self._nacht_im_lkw
         try:
             dateien = spesen_lib.erstelle_spesenzettel(
                 self.info, name, abteilung, personal_nr,
                 force=self.force_var.get(), log=self.log,
-                heimat=self._heim_text)
+                heimat=self._heim_text,
+                zeitraum=self._gewaehlter_zeitraum(),
+                nacht_im_lkw=nacht_im_lkw)
         except Exception as e:
             self.log("FEHLER beim Erstellen: %s" % e)
             self.log(traceback.format_exc())
@@ -884,6 +1177,7 @@ def _selbsttest(ddd_pfad):
     """
     bericht = ["Selbsttest %s" % datetime.now().isoformat(timespec="seconds"),
                "Programm : %s" % sys.executable,
+               "Version  : %s" % spesen_lib.VERSION,
                "Formular : %s (%s)" % (spesen_lib.FORMULAR,
                                        "vorhanden"
                                        if spesen_lib.FORMULAR.is_file()

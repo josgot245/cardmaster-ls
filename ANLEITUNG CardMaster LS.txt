@@ -1,7 +1,7 @@
 CardMaster LS — Spesenzettel aus der Fahrerkarte — Anleitung
 ============================================================
 
-CardMaster LS (Version 1.4.4) liest die digitale Fahrerkarte
+CardMaster LS (Version 1.4.6) liest die digitale Fahrerkarte
 (Tachographenkarte) über einen USB-Kartenleser aus und befüllt daraus
 automatisch den Spesenzettel „Reisekostenabrechnung“ auf dem
 gescannten Originalformular. Zusätzlich zeigt es die Kartendaten des
@@ -11,6 +11,40 @@ Das Fenster erscheint in den Firmenfarben von LS Logistik (Dunkelblau
 #242E45, Rot #9C1006, Grün #94C11C) auf hellen Flächen. Farben,
 Schriften und die Gestaltung der Bedienelemente sind zentral in der
 Datei stil.py hinterlegt und lassen sich dort anpassen.
+
+Neu in Version 1.4.6
+--------------------
+• Nah- oder Fernverkehr: Auf der Seite „Spesenzettel“ gibt es jetzt die
+  Auswahl „Abrechnungsart“. Sie gilt je Karte und wird gespeichert.
+  – Fernverkehr: Stand der Lkw nachts nicht am Heimatort, wird der Tag
+    automatisch um 00:00 geteilt (wie bisher).
+  – Nahverkehr: Für jede Nacht, in der der Lkw nicht am Heimatort stand,
+    fragt das Programm nach, ob die Nacht im Lkw verbracht wurde. Nur die
+    bestätigten Nächte werden um 00:00 geteilt.
+• Drei-Orte-Zeile für alle Karten: Ist ein Heimatort eingetragen, steht in
+  jeder Tageszeile der Reiseweg „Heimatort – Zwischenort – Heimatort“
+  (kein Pfeil). Ohne Heimatort bleiben die Touren (Start–Ziel).
+
+Neu in Version 1.4.5
+--------------------
+• Zeitraum-Auswahl im Spesenzettel: Über das Feld „Zeitraum“ lässt sich
+  genau eine Abrechnungsperiode (16. bis 15. des Folgemonats, z. B.
+  „16.10.2026 – 15.11.2026“) auswählen und neu erstellen. „Alle offenen
+  Zeiträume“ rechnet wie bisher nur das ab, was noch auf keinem Blatt
+  steht. Ein bereits abgerechneter Zeitraum wird als Ergänzungsblatt
+  (…_2.pdf) erzeugt.
+• Heimatort bleibt erhalten: Wird die Karte neu gelesen und meldet dabei
+  eine andere Kartennummer, übernimmt das Programm den gespeicherten
+  Heimatort automatisch von der anderen Karte desselben Fahrers. So
+  erscheinen die Zeilen „Heimatort – Zwischenort – Heimatort“ weiterhin.
+• Wird der Heimatort geleert und „Prüfen“ gewählt, fragt das Programm
+  vorher nach — ein versehentliches Verlieren des Wohnorts ist damit
+  ausgeschlossen.
+• Update-Prüfung: Beim Start vergleicht das Programm seine Version mit
+  der neuesten Veröffentlichung auf GitHub und weist oben auf der
+  Startseite auf eine neuere Fassung hin („Zum Download“ öffnet die
+  Release-Seite). Die Prüfung lässt sich dort abschalten und über
+  „Nach Updates suchen“ jederzeit von Hand auslösen.
 
 Neu in Version 1.4.4
 --------------------
@@ -50,7 +84,7 @@ Neu in Version 1.4.2
 
 Installation (einmalig)
 -----------------------
-Setup starten:   installer\Ausgabe\CardMaster-Setup-1.4.4.exe
+Setup starten:   installer\Ausgabe\CardMaster-Setup-1.4.6.exe
                   (Doppelklick, dann „Weiter“ — keine Administrator-Rechte nötig)
 
 Im Assistenten lässt sich der Installationsordner frei wählen
@@ -109,21 +143,28 @@ Bedienung
    Der Lkw-Abstellplatz muss nicht angegeben werden; maßgeblich ist
    allein der Wohnort des Fahrers.
 
-3. Die Tabelle zeigt nur die Einträge (Fahrten bzw. Tage), die noch auf
-   keinem Spesenzettel standen. Damit nichts doppelt abgerechnet wird,
-   merkt sich das Programm pro Fahrerkarte den letzten abgerechneten Tag
-   — die Karte eines anderen Fahrers hat ihren eigenen Stand.
+3. Zeitraum wählen: Das Feld „Zeitraum“ über der Tabelle listet alle
+   Abrechnungszeiträume der Karte (16. bis 15. des Folgemonats).
+   • „Alle offenen Zeiträume“ (Voreinstellung): Es werden nur die
+     Einträge (Fahrten bzw. Tage) gezeigt, die noch auf keinem
+     Spesenzettel standen. Damit nichts doppelt abgerechnet wird, merkt
+     sich das Programm pro Fahrerkarte den letzten abgerechneten Tag —
+     die Karte eines anderen Fahrers hat ihren eigenen Stand.
+   • Ein einzelner Zeitraum (z. B. „16.10.2026 – 15.11.2026“): Es
+     werden alle Einträge genau dieses Zeitraums gezeigt und neu
+     erstellt, unabhängig vom Abrechnungsstand. War der Zeitraum schon
+     abgerechnet, entsteht ein Ergänzungsblatt (…_2.pdf).
 
 4. „Spesenzettel erstellen (PDF)“ befüllt das gescannte Originalformular
    (Spesen.pdf): Datum, Uhrzeiten Beginn/Ende, Reiseanlass mit
-   Reiseweg (bei Touren Ort → Ort, bei Tageszeilen ein Ort aus der
-   Schicht; Fahrzeug, km) und die exakte Dauer (Minuten genau, keine
-   Rundung). Bei einem Grenzübertritt am Tag wird das Land ergänzt,
-   z. B. „Dienstfahrt (D,NL)“. Kosten-Spalten bleiben frei.
+   Reiseweg (mit Heimatort „Heimatort – Zwischenort – Heimatort“, ohne
+   Heimatort je Fahrt „Start – Ziel“; dazu Fahrzeug und km) und die
+   exakte Dauer (Minuten genau, keine Rundung). Bei einem Grenzübertritt
+   am Tag wird das Land ergänzt, z. B. „Dienstfahrt (D,NL)“.
+   Kosten-Spalten bleiben frei.
    Pro Abrechnungszeitraum (16. bis 15. des Folgemonats) wird ein Blatt
    erzeugt; sind mehr als 26 Zeilen dabei, bekommt das Blatt weitere
-   Seiten. Nachgetragene Einträge für einen schon abgerechneten Zeitraum
-   werden als Ergänzungsblatt (…_2.pdf) erzeugt.
+   Seiten.
    Über „Ordner öffnen“ gelangt man direkt zu den erstellten Dateien.
 
 Speicherorte ändern

@@ -167,6 +167,15 @@ STATE_DATEI = DATA_DIR / "spesen_state.json"  # Abrechnungsstand je Karte
 ORTSCACHE_DATEI = DATA_DIR / "ortscache.json"  # Ortsnamen je Koordinate
 EINSTELLUNGEN_DATEI = DATA_DIR / "einstellungen.json"  # Speicherorte
 
+# ------------------------------------------------------------------ Version
+# Programmversion (bei jedem Release anheben) und das öffentliche
+# GitHub-Repository, in dem die Releases samt Setup liegen. Die Startseite
+# vergleicht diese Version mit dem neuesten Release und weist auf eine
+# neuere Fassung hin.
+VERSION = "1.4.6"
+GITHUB_REPO = "josgot245/cardmaster-ls"
+RELEASES_SEITE = "https://github.com/%s/releases" % GITHUB_REPO
+
 
 # --------------------------------------------------------- Speicherorte
 # Standard ist der Datenordner (Dokumente\CardMaster LS). Abweichende
@@ -236,6 +245,70 @@ def setze_ordner(schluessel, pfad):
         werte.pop(schluessel, None)
     speichere_einstellungen(werte)
     return ddd_ordner() if schluessel == "ddd_ordner" else pdf_ordner()
+
+
+# --------------------------------------------------------- Update-Prüfung
+
+def _versions_teile(text):
+    """Versionsnummer in Zahlen umwandeln: 'v1.4.5' -> (1, 4, 5)."""
+    zahlen = re.findall(r"\d+", text or "")
+    return tuple(int(z) for z in zahlen[:4]) or (0,)
+
+
+def update_verfuegbar(neu, alt=VERSION):
+    """True, wenn 'neu' eine höhere Version als 'alt' ist."""
+    return _versions_teile(neu) > _versions_teile(alt)
+
+
+def hole_neueste_version(timeout=6.0):
+    """Neueste Veröffentlichung des GitHub-Repositories abfragen.
+
+    Rückgabe: dict mit 'version' (z. B. '1.4.6'), 'seite' (Webadresse der
+    Veröffentlichung) und 'dateien' (Namen der Anhänge). Wirft bei
+    Verbindungsfehlern eine Ausnahme.
+    """
+    url = "https://api.github.com/repos/%s/releases/latest" % GITHUB_REPO
+    anfrage = urllib.request.Request(
+        url, headers={"User-Agent": "CardMaster LS %s" % VERSION,
+                      "Accept": "application/vnd.github+json"})
+    with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:
+        daten = json.loads(antwort.read().decode("utf-8"))
+    version = str(daten.get("tag_name") or daten.get("name") or "").strip()
+    return {
+        "version": version,
+        "seite": daten.get("html_url") or RELEASES_SEITE,
+        "dateien": [a.get("name", "") for a in (daten.get("assets") or [])],
+    }
+
+
+def pruefe_update(timeout=6.0):
+    """Update prüfen.
+
+    Rückgabe: (info, fehler). Ist eine neuere Version vorhanden, steht in
+    info ein dict (siehe hole_neueste_version); sonst ist info None.
+    Schlägt die Abfrage fehl (z. B. keine Internetverbindung), steht in
+    fehler ein Text.
+    """
+    try:
+        info = hole_neueste_version(timeout=timeout)
+    except Exception as e:
+        return None, str(e)
+    if info and update_verfuegbar(info["version"]):
+        return info, None
+    return None, None
+
+
+def update_pruefen_aktiv():
+    """Einstellung: beim Start nach Updates suchen (Standard: ja)."""
+    return bool(lade_einstellungen().get("update_pruefen", True))
+
+
+def setze_update_pruefen(aktiv):
+    """Automatische Update-Prüfung ein- oder ausschalten."""
+    werte = lade_einstellungen()
+    werte["update_pruefen"] = bool(aktiv)
+    speichere_einstellungen(werte)
+
 
 # ----------------------------------------------------------- Formulargeometrie
 # Der Scan wurde mit scale=3 analysiert: 3 Pixel = 1 Punkt (PDF 595 x 842).
@@ -846,7 +919,8 @@ def _fahrzeug_fuer_tag(tag, touren):
 
 
 def fernverkehr_zeilen(info, heim, radius_km=8.0, log=None,
-                       heimat_text=None):
+                       heimat_text=None, nacht_im_lkw=None,
+                       nacht_sammeln=None):
     """Tageszeilen für den Fernverkehr erzeugen.
 
     Eine Zeile je Kalendertag mit Anwesenheit (EF 0504). Folge von
@@ -866,6 +940,14 @@ def fernverkehr_zeilen(info, heim, radius_km=8.0, log=None,
     Die Reiseweg-Zeile lautet damit „Geestland – Oelsnitz – Geestland“.
     Bewegungsfreie Wochenendtage zwischen zwei Arbeitswochen bleiben als
     leere Zeilen stehen.
+
+    nacht_im_lkw: None bedeutet Fernverkehr — steht der Lkw nachts nicht
+    am Heimatort, wird der Tag automatisch um 00:00 geteilt. Ist ein dict
+    {(vortag, folgetag): True/False} übergeben (Nahverkehr), wird je Nacht
+    nach dieser Angabe geteilt oder nicht; fehlt ein Schlüssel, wird die
+    Nacht in nacht_sammeln gemeldet (für die Rückfrage) und vorläufig
+    geteilt.
+    nacht_sammeln: optionale Liste, die offene Nächte aufnimmt.
 
     Rückgabe: Liste von Tageszeilen wie bei den Fahrten (tag, beginn,
     ende, dauer, km, start_ort/end_ort, start_lat/…, fahrzeug).
@@ -915,7 +997,10 @@ def fernverkehr_zeilen(info, heim, radius_km=8.0, log=None,
             "ende": basis + timedelta(minutes=ende),
         })
 
-    # Nachtschichten: 00:00-Schnitt, wenn die Nacht nicht zuhause war
+    # Nachtschichten: 00:00-Schnitt, wenn die Nacht nicht zuhause war.
+    # Fernverkehr (nacht_im_lkw ist None): automatisch teilen.
+    # Nahverkehr (dict): je Nacht nach Rückfrage teilen; offene Nächte
+    # werden gesammelt und vorläufig geteilt.
     for i in range(1, len(tage)):
         vor, akt = tage[i - 1], tage[i]
         luecke = (akt["real_start"] - vor["real_ende"]).total_seconds()
@@ -923,13 +1008,26 @@ def fernverkehr_zeilen(info, heim, radius_km=8.0, log=None,
             continue          # Wochenende/freier Tag beendet den Lauf
         zuhause = _nacht_zuhause(vor["real_ende"], akt["real_start"],
                                  positionen, heim, radius_km, basis_pos)
-        if zuhause is False:
+        if zuhause is None:
+            log("Nacht %s -> %s: keine Position gefunden, echte Zeiten "
+                "werden verwendet." % (_fmt(vor["tag"]), _fmt(akt["tag"])))
+            continue
+        if zuhause is True:
+            continue          # Lkw stand am Heimatort — nichts zu teilen
+        # Lkw stand nicht am Heimatort: im Nahverkehr nachfragen.
+        teilen = True
+        if nacht_im_lkw is not None:
+            schluessel = (vor["tag"].isoformat(), akt["tag"].isoformat())
+            if schluessel in nacht_im_lkw:
+                teilen = bool(nacht_im_lkw[schluessel])
+            elif nacht_sammeln is not None:
+                nacht_sammeln.append({
+                    "vor": vor["tag"], "nach": akt["tag"],
+                    "von": vor["real_ende"], "bis": akt["real_start"]})
+        if teilen:
             vor["ende"] = datetime.combine(
                 vor["tag"] + timedelta(days=1), dtime(0, 0))
             akt["start"] = datetime.combine(akt["tag"], dtime(0, 0))
-        elif zuhause is None:
-            log("Nacht %s -> %s: keine Position gefunden, echte Zeiten "
-                "werden verwendet." % (_fmt(vor["tag"]), _fmt(akt["tag"])))
 
     touren = info.get("touren", [])
     heim_name = (heimat_text or "").strip()
@@ -963,6 +1061,18 @@ def fernverkehr_zeilen(info, heim, radius_km=8.0, log=None,
             "end_ort": None,
         })
     return _wochenend_luecken(zeilen)
+
+
+def naechte_ausser_heimat(info, heim, radius_km=8.0, log=None):
+    """Nächte, in denen der Lkw nicht am Heimatort stand.
+
+    Für die Rückfrage im Nahverkehr: Rückgabe ist eine Liste von dicts mit
+    'vor'/'nach' (Datum) und 'von'/'bis' (echte Zeiten) je Nacht.
+    """
+    sammeln = []
+    fernverkehr_zeilen(info, heim, radius_km=radius_km, log=log,
+                       nacht_im_lkw={}, nacht_sammeln=sammeln)
+    return sammeln
 
 
 def _ort_aus_schicht(positionen, tag, p_start):
@@ -1024,6 +1134,17 @@ def speichere_heimat(kartennummer, text, heim):
     else:
         ks["heimat"] = {"text": (text or "").strip(),
                         "lat": heim[0], "lon": heim[1]}
+    save_state(st)
+
+
+def speichere_kartenwert(kartennummer, schluessel, wert):
+    """Beliebigen Wert je Karte merken (None entfernt ihn)."""
+    st = load_state()
+    ks = kartenstand(st, kartennummer)
+    if wert is None:
+        ks.pop(schluessel, None)
+    else:
+        ks[schluessel] = wert
     save_state(st)
 
 
@@ -1171,13 +1292,23 @@ def _neuer_pfad(nachname, von, bis):
 
 
 def erstelle_spesenzettel(info, name, abteilung, personal_nr,
-                          force=False, log=print, heimat=None):
+                          force=False, log=print, heimat=None, zeitraum=None,
+                          nacht_im_lkw=None):
     """Spesenzettel fuer alle noch offenen Einträge dieser Karte erstellen.
 
     Ist ein Heimatort (Wohnort des Fahrers, z. B. Bexhövede) angegeben,
     werden Tageszeilen erzeugt und Nächte außerhalb des Heimatorts
     automatisch um 00:00 geteilt (Fernverkehr). Ohne Heimatort bleiben die
     Touren unverändert (Nahverkehr).
+
+    zeitraum=(von, bis) beschränkt die Erstellung auf genau diesen
+    Abrechnungszeitraum (16. bis 15. des Folgemonats). Dann wird der
+    Abrechnungsstand für die Auswahl nicht berücksichtigt — bereits
+    abgerechnete Zeiträume entstehen als Ergänzungsblatt (…_2.pdf).
+
+    nacht_im_lkw: Nur im Nahverkehr gesetzt. dict
+    {(vortag, folgetag): True/False} — welche Nächte im Lkw verbracht
+    wurden. None bedeutet Fernverkehr (automatischer 00:00-Schnitt).
 
     Rueckgabe: Liste der erzeugten PDF-Dateien (Path).
     Der Abrechnungsstand wird in spesen_state.json aktualisiert.
@@ -1201,18 +1332,29 @@ def erstelle_spesenzettel(info, name, abteilung, personal_nr,
 
     if heim is not None:
         zeilen = fernverkehr_zeilen(info, heim, log=log,
-                                    heimat_text=heim_name)
+                                    heimat_text=heim_name,
+                                    nacht_im_lkw=nacht_im_lkw)
         log("Abrechnungsart: Tageszeilen mit Heimatort %s (%d Tage)"
             % (heim_name or heimat, len(zeilen)))
     else:
         zeilen = list(info["touren"])
 
-    if not force and letzte:
+    if zeitraum is not None:
+        von_z, bis_z = zeitraum
+        zeilen = [z for z in zeilen
+                  if abrechnungsperiode(z["tag"]) == (von_z, bis_z)]
+        zeilen = leere_raender_entfernen(zeilen)
+        log("Gewählter Zeitraum: %s – %s (%d Einträge)"
+            % (_fmt(von_z), _fmt(bis_z), len(zeilen)))
+    elif not force and letzte:
         zeilen = neue_fahrten(zeilen, letzte)
         zeilen = leere_raender_entfernen(zeilen)
 
     if not zeilen:
-        if letzte:
+        if zeitraum is not None:
+            log("Im Zeitraum %s – %s sind keine Einträge vorhanden."
+                % (_fmt(zeitraum[0]), _fmt(zeitraum[1])))
+        elif letzte:
             log("Keine neuen Einträge seit dem %s – kein Spesenzettel nötig."
                 % _fmt(date.fromisoformat(letzte)))
         else:
