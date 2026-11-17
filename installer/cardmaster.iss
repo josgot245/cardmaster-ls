@@ -1,6 +1,6 @@
 ﻿; ============================================================
 ;  CardMaster LS (Fahrerkarte) - Inno-Setup-Skript
-;  Baut:  installer\Ausgabe\CardMaster-Setup-1.4.7.exe
+;  Baut:  installer\Ausgabe\CardMaster-Setup-1.4.8.exe
 ;
 ;  Installation ohne Administrator-Rechte nach
 ;  %LOCALAPPDATA%\Programs\CardMaster LS
@@ -13,7 +13,7 @@
 ; ============================================================
 
 #define AppName "CardMaster LS"
-#define AppVersion "1.4.7"
+#define AppVersion "1.4.8"
 #define AppPublisher "Standardprojekt"
 #define AppExeName "CardMaster LS.exe"
 

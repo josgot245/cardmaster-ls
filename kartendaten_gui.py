@@ -6,6 +6,7 @@ Links die Liste aller Tage der Fahrerkarte, rechts der gewählte Tag:
   * Kreisdiagramm der Zeitanteile
   * Verstöße, Hinweise, Ereignisse und Störungen des Tages
 """
+import math
 import tkinter as tk
 from datetime import date, datetime
 from pathlib import Path
@@ -16,6 +17,73 @@ import assets
 import kartendaten
 import spesen_daten
 import stil
+
+# Neutrales Dunkelgrau für Beschriftungen in den Diagrammen – ersetzt das
+# Marken-Navy, das dort zu blau wirkte.
+GRAPHIT = "#3B3F45"
+
+# „Unbekannt“ (noch nicht ausgelesene Zeit) wird hell dargestellt und mit
+# roten Schrägstrichen schraffiert – so bleibt der Rest neutral und die
+# Lücke ist trotzdem deutlich zu erkennen.
+UNBEKANNT = "#E6E9EE"
+SCHRAFFUR = "#B91D21"
+
+
+def _winkel_drin(w, lo, hi):
+    """Prüfen, ob der Winkel w im Bereich lo..hi (Grad) liegt."""
+    if hi - lo >= 359.999:
+        return True
+    while w < lo:
+        w += 360.0
+    while w >= lo + 360.0:
+        w -= 360.0
+    return w <= hi
+
+
+def _schraffiere_rechteck(c, x1, y1, x2, y2, abstand=5, farbe=SCHRAFFUR,
+                          breite=1, tags=None):
+    """Rechteck mit diagonalen Linien (y = x + c) schraffieren."""
+    for c0 in range(int(y1 - x2) - abstand, int(y2 - x1) + abstand + 1, abstand):
+        xa = max(x1, y1 - c0)
+        xb = min(x2, y2 - c0)
+        if xb - xa < 1:
+            continue
+        c.create_line(xa, xa + c0, xb, xb + c0, fill=farbe, width=breite,
+                      tags=tags)
+
+
+def _schraffiere_bogen(c, cx, cy, r_aussen, ring, start, extent,
+                       abstand=5, farbe=SCHRAFFUR, breite=1):
+    """Ringsegment (Kreisbogen) mit diagonalen Linien schraffieren."""
+    r_innen = r_aussen - ring
+    lo, hi = (start, start + extent) if extent >= 0 else (start + extent, start)
+    x_min, x_max = cx - r_aussen, cx + r_aussen
+    y_min, y_max = cy - r_aussen, cy + r_aussen
+    schritt = 2.0
+    c_start = int(y_min - x_max) - abstand
+    c_ende = int(y_max - x_min) + abstand
+    for c0 in range(c_start, c_ende + 1, abstand):
+        lauf = []
+        x = x_min
+        while x <= x_max:
+            y = x + c0
+            drin = False
+            if y_min <= y <= y_max:
+                dx, dy = x - cx, y - cy
+                r = math.hypot(dx, dy)
+                if r_innen <= r <= r_aussen:
+                    drin = _winkel_drin(math.degrees(math.atan2(-dy, dx)),
+                                        lo, hi)
+            if drin:
+                lauf.append((x, y))
+            elif lauf:
+                c.create_line(lauf[0][0], lauf[0][1], lauf[-1][0], lauf[-1][1],
+                              fill=farbe, width=breite)
+                lauf = []
+            x += schritt
+        if lauf:
+            c.create_line(lauf[0][0], lauf[0][1], lauf[-1][0], lauf[-1][1],
+                          fill=farbe, width=breite)
 
 
 class KartendatenTab(ttk.Frame):
@@ -100,7 +168,7 @@ class KartendatenTab(ttk.Frame):
                   font=stil.schrift(stil.PT_TEXT)).grid(row=1, column=0, sticky="w",
                                              pady=(0, 6))
 
-        self.zeit_canvas = tk.Canvas(rechts, height=146, highlightthickness=0,
+        self.zeit_canvas = tk.Canvas(rechts, height=160, highlightthickness=0,
                                      background=stil.WEISS)
         self.zeit_canvas.grid(row=2, column=0, sticky="ew")
         self.zeit_canvas.bind("<Configure>", lambda e: self._zeichne_zeit())
@@ -299,30 +367,42 @@ class KartendatenTab(ttk.Frame):
         s = self._auswahl["summen"]
         profil = self._auswahl["profil"]
         breite = max(260, c.winfo_width() - 28)
-        links, y0, hoehe = 14, 30, 46
+        links = 14
+        rechts = links + breite
+        titel_y, y0, hoehe = 13, 32, 48
 
-        # Stundenraster unter dem Balken (0, 2, 4 … 24)
+        # Überschrift der Grafik
+        c.create_text(links, titel_y, anchor="w", text="Tagesverlauf",
+                      font=stil.schrift(stil.PT_KLEIN, True), fill=GRAPHIT)
+
+        # Hintergrundspur und Stundenraster
+        c.create_rectangle(links, y0, rechts, y0 + hoehe,
+                           fill="#F1F3F7", outline="")
         for stunde in range(0, 25):
             x = links + breite * stunde / 24.0
+            if 0 < stunde < 24:
+                c.create_line(x, y0, x, y0 + hoehe, fill="#E1E5ED")
             if stunde % 2 == 0:
-                c.create_line(x, y0 + hoehe, x, y0 + hoehe + 6,
+                c.create_line(x, y0 + hoehe, x, y0 + hoehe + 5,
                               fill="#C9D0DC")
-                c.create_text(x, y0 + hoehe + 15,
-                              text="%02d" % stunde,
-                              font=stil.schrift(stil.PT_MINI), fill=stil.GEDAEMPFT)
+                c.create_text(x, y0 + hoehe + 16, text="%02d" % stunde,
+                              font=stil.schrift(stil.PT_MINI),
+                              fill=stil.GEDAEMPFT)
 
-        # Aktivitätsbalken: ein durchgehender 24-Stunden-Streifen
+        # Aktivitätsbalken: durchgehender 24-Stunden-Streifen mit feinen
+        # weißen Trennlinien zwischen den Abschnitten
         for von, bis, art in self._laeufe(profil):
-            if art < 0:
-                farbe = "#ECEEF3"
-            else:
-                farbe = kartendaten.FARBEN[art]
+            unbekannt = art < 0
+            farbe = UNBEKANNT if unbekannt else kartendaten.FARBEN[art]
             x1 = links + breite * von / 1440.0
             x2 = links + breite * bis / 1440.0
-            c.create_rectangle(x1, y0, x2, y0 + hoehe,
-                               fill=farbe, outline="")
+            c.create_rectangle(x1, y0, x2, y0 + hoehe, fill=farbe,
+                               outline=stil.WEISS, width=1)
+            if unbekannt and x2 - x1 > 3:
+                _schraffiere_rechteck(c, x1 + 1, y0 + 1,
+                                      x2 - 1, y0 + hoehe - 1)
 
-        # Verstöße als rote Markierung über dem Balken
+        # Verstöße als Markierung über dem Balken
         for m in self._auswahl["verstoesse"]:
             if not m.get("zeit"):
                 continue
@@ -332,11 +412,10 @@ class KartendatenTab(ttk.Frame):
             except ValueError:
                 continue
             x = links + breite * minute / 1440.0
-            c.create_polygon(x, y0 - 8, x - 5, y0 - 1, x + 5, y0 - 1,
-                             fill=stil.ROT, outline="")
+            c.create_polygon(x, y0 - 7, x - 5, y0 - 1, x + 5, y0 - 1,
+                             fill=stil.ROT, outline=stil.WEISS, width=1)
 
-        c.create_rectangle(links, y0, links + breite, y0 + hoehe,
-                           outline=stil.RAND)
+        c.create_rectangle(links, y0, rechts, y0 + hoehe, outline=stil.RAND)
 
         # Legende mit den Zeitanteilen des Tages
         eintraege = [
@@ -346,22 +425,24 @@ class KartendatenTab(ttk.Frame):
             (s["lenk"], kartendaten.FARBEN[3], "Fahrt"),
         ]
         if s["unbekannt"]:
-            eintraege.append((s["unbekannt"], "#ECEEF3", "Unbekannt"))
+            eintraege.append((s["unbekannt"], UNBEKANNT, "Unbekannt"))
         schrift = tkfont.Font(font=stil.schrift(stil.PT_KLEIN))
-        x, y = links, y0 + hoehe + 36
+        x, y = links, y0 + hoehe + 34
         for wert, farbe, name in eintraege:
             text = "%s %s" % (name, kartendaten.hmm(wert))
             breite_text = schrift.measure(text) + 24
-            if x > links and x + breite_text > links + breite:
-                x, y = links, y + 20
+            if x > links and x + breite_text > rechts:
+                x, y = links, y + 19
             c.create_rectangle(x, y - 5, x + 10, y + 5,
                                fill=farbe, outline=stil.RAND)
+            if name == "Unbekannt":
+                _schraffiere_rechteck(c, x, y - 5, x + 10, y + 5, abstand=4)
             c.create_text(x + 16, y, anchor="w", text=text,
                           font=stil.schrift(stil.PT_KLEIN), fill=stil.TEXT)
             x += breite_text + 14
 
         if s["unbekannt"]:
-            c.create_text(links + breite, y + 20, anchor="e",
+            c.create_text(rechts, y + 19, anchor="e",
                           text="* nach dem letzten Auslesen unbekannt",
                           font=stil.schrift(stil.PT_MINI), fill=stil.GRAU)
 
@@ -391,10 +472,10 @@ class KartendatenTab(ttk.Frame):
             kartendaten.hmm(ende - start))
         c.delete("hover")
         xp = links + breite * minute / 1440.0
-        c.create_line(xp, 30, xp, 76, fill=stil.NAVY,
+        c.create_line(xp, 32, xp, 80, fill=GRAPHIT,
                       dash=(2, 2), tags="hover")
         c.create_text(c.winfo_width() - 8, 8, anchor="ne", text=text,
-                      font=stil.schrift(stil.PT_KLEIN, True), fill=stil.NAVY,
+                      font=stil.schrift(stil.PT_KLEIN, True), fill=GRAPHIT,
                       tags="hover")
 
     def _hover_loeschen(self):
@@ -413,11 +494,11 @@ class KartendatenTab(ttk.Frame):
                  (s["bereit"], kartendaten.FARBEN[1], "Bereitschaft"),
                  (s["arbeit"], kartendaten.FARBEN[2], "Arbeit"),
                  (s["lenk"], kartendaten.FARBEN[3], "Fahrt"),
-                 (s["unbekannt"], "#ECEEF3", "Unbekannt")]
+                 (s["unbekannt"], UNBEKANNT, "Unbekannt")]
 
-        # Kreis und Legende als eine Gruppe mittig im verfügbaren Platz
-        # anordnen (der Canvas ist so breit wie die rechte Seite).
-        r, luecke = 94, 38
+        # Ringdiagramm und Legende als eine Gruppe mittig im verfügbaren
+        # Platz anordnen (der Canvas ist so breit wie die rechte Seite).
+        r_aussen, ring, luecke = 96, 30, 36
         schrift = tkfont.Font(font=stil.schrift(stil.PT_TEXT))
         texte = ["%-13s %5s h   %3d %%"
                  % (name, kartendaten.hmm(wert),
@@ -426,33 +507,47 @@ class KartendatenTab(ttk.Frame):
         legende = max(schrift.measure(t) for t in texte) + 22
         breite = max(c.winfo_width(), 470)
         hoehe = max(c.winfo_height(), 228)
-        gruppe = 2 * r + luecke + legende
+        gruppe = 2 * r_aussen + luecke + legende
         links = max(6, int((breite - gruppe) / 2))
-        cx = links + r
+        cx = links + r_aussen
         cy = int(hoehe / 2)
+        r_mittel = r_aussen - ring / 2
 
+        # Ringsegmente mit kleinen Lücken dazwischen
         winkel = 90.0
-        for wert, farbe, _name in werte:
+        for idx, (wert, farbe, _name) in enumerate(werte):
             if wert <= 0:
                 continue
             ausdehnung = -360.0 * wert / 1440.0
-            c.create_arc(cx - r, cy - r, cx + r, cy + r,
-                         start=winkel, extent=ausdehnung,
-                         fill=farbe, outline=stil.WEISS, width=2)
+            lueck = 1.8
+            if abs(ausdehnung) > 3 * lueck:
+                start = winkel - lueck / 2
+                extent = ausdehnung + lueck
+            else:
+                start, extent = winkel, ausdehnung
+            c.create_arc(cx - r_mittel, cy - r_mittel,
+                         cx + r_mittel, cy + r_mittel,
+                         start=start, extent=extent,
+                         style=tk.ARC, outline=farbe, width=ring)
+            if idx == 4:
+                _schraffiere_bogen(c, cx, cy, r_aussen, ring, start, extent)
             winkel += ausdehnung
-        c.create_oval(cx - r, cy - r, cx + r, cy + r,
-                      outline=stil.RAND)
-        c.create_text(cx, cy - 8, text="24 h",
-                      font=stil.schrift(stil.PT_UNTERTITEL, True), fill=stil.NAVY)
-        c.create_text(cx, cy + 12, text="Tagesanteile",
+
+        # Mitte des Rings
+        c.create_text(cx, cy - 9, text="24 h",
+                      font=stil.schrift(stil.PT_UNTERTITEL, True),
+                      fill=GRAPHIT)
+        c.create_text(cx, cy + 11, text="Tagesanteile",
                       font=stil.schrift(stil.PT_MINI), fill=stil.GRAU)
 
         # Legende
-        x = cx + r + luecke
+        x = cx + r_aussen + luecke
         y = cy - 76
         for (wert, farbe, name), text in zip(werte, texte):
             c.create_rectangle(x, y, x + 14, y + 14,
                                fill=farbe, outline=stil.RAND)
+            if name == "Unbekannt":
+                _schraffiere_rechteck(c, x, y, x + 14, y + 14, abstand=5)
             c.create_text(x + 22, y + 7, anchor="w", text=text,
                           font=schrift, fill=stil.TEXT)
             y += 30

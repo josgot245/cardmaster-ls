@@ -14,7 +14,11 @@ import spesen_daten
 
 ARTEN = ("Ruhe", "Bereitschaft", "Arbeit", "Fahrt")
 KURZ = ("Ruhe", "Bereit.", "Arbeit", "Fahrt")
-FARBEN = ("#C7D0DE", "#E8B25B", "#94C11C", "#2F4A7A")
+
+# Farben der Tagesanteile – gedeckt und zu den Firmen-Assets (Rot/Grau)
+# passend. Das frühere Navyblau der Fahrt entfällt. „Unbekannt“ wird im
+# Programm hell mit roten Schrägstrichen gezeichnet.
+FARBEN = ("#C8CDD5", "#E3A94E", "#5C6672", "#B91D21")
 
 WOCHENTAGE = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
 

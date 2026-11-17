@@ -1,16 +1,28 @@
 CardMaster LS — Spesenzettel aus der Fahrerkarte — Anleitung
 ============================================================
 
-CardMaster LS (Version 1.4.7) liest die digitale Fahrerkarte
+CardMaster LS (Version 1.4.8) liest die digitale Fahrerkarte
 (Tachographenkarte) über einen USB-Kartenleser aus und befüllt daraus
 automatisch den Spesenzettel „Reisekostenabrechnung“ auf dem
 gescannten Originalformular. Zusätzlich zeigt es die Kartendaten des
-gewählten Tages mit Tagesgrafik, Kreisdiagramm und Verstößen an.
+gewählten Tages mit Tagesverlauf, Ringdiagramm und Verstößen an.
 
 Das Fenster erscheint in den Firmenfarben von LS Logistik (Dunkelblau
 #242E45, Rot #9C1006, Grün #94C11C) auf hellen Flächen. Farben,
 Schriften und die Gestaltung der Bedienelemente sind zentral in der
 Datei stil.py hinterlegt und lassen sich dort anpassen.
+
+Neu in Version 1.4.8
+--------------------
+• Neu gestaltete Diagramme im Reiter „Kartendaten ansehen“: Das Kreis-
+  diagramm ist jetzt ein Ring mit Beschriftung in der Mitte, der Tagesverlauf
+  hat eine Überschrift, einen hellen Hintergrundstreifen, ein Stundenraster
+  und feine Trennlinien zwischen den Abschnitten. Verstöße erscheinen als
+  rote Dreiecke über dem Balken.
+• Neue Diagrammfarben, passend zu den Firmen-Assets: Ruhe hellgrau, Arbeit
+  anthrazit, Fahrt im Markenrot; das frühere Navyblau ist entfallen.
+  „Unbekannt“ (noch nicht ausgelesene Zeit) wird hell mit roten Schräg-
+  strichen dargestellt, damit die Lücke klar erkennbar bleibt.
 
 Neu in Version 1.4.7
 --------------------
@@ -102,7 +114,7 @@ Neu in Version 1.4.2
 
 Installation (einmalig)
 -----------------------
-Setup starten:   installer\Ausgabe\CardMaster-Setup-1.4.7.exe
+Setup starten:   installer\Ausgabe\CardMaster-Setup-1.4.8.exe
                   (Doppelklick, dann „Weiter“ — keine Administrator-Rechte nötig)
 
 Im Assistenten lässt sich der Installationsordner frei wählen
