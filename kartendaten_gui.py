@@ -47,8 +47,9 @@ class KartendatenTab(ttk.Frame):
                   font=stil.schrift(stil.PT_KLEIN)).grid(row=1, column=0, sticky="w")
 
         # --- Tagesliste ---------------------------------------------------
-        links = ttk.LabelFrame(self, text="Tage", padding=(10, 8))
-        links.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
+        links_karte = stil.Karte(self, titel="Tage", padding=(10, 8))
+        links_karte.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
+        links = links_karte.innen
         links.rowconfigure(0, weight=1)
         links.columnconfigure(0, weight=1)
         spalten = (("datum", "Datum", 112, "w"),
@@ -72,6 +73,7 @@ class KartendatenTab(ttk.Frame):
         self.tage_tree.bind("<<TreeviewSelect>>", self._tag_gewaehlt)
         self.tage_tree.tag_configure("warn", foreground=stil.ROT)
         self.tage_tree.tag_configure("unvoll", foreground=stil.GRAU)
+        stil.zebra_konfigurieren(self.tage_tree)
 
         # --- rechte Seite --------------------------------------------------
         rechts = ttk.Frame(self)
@@ -110,8 +112,9 @@ class KartendatenTab(ttk.Frame):
         self.kreis_canvas.grid(row=3, column=0, sticky="ew", pady=(2, 6))
         self.kreis_canvas.bind("<Configure>", lambda e: self._zeichne_kreis())
 
-        meld = ttk.LabelFrame(rechts, padding=(10, 8))
-        meld.grid(row=4, column=0, sticky="nsew")
+        meld_karte = stil.Karte(rechts, titel="", padding=(10, 8))
+        meld_karte.grid(row=4, column=0, sticky="nsew")
+        meld = meld_karte.innen
         meld.rowconfigure(1, weight=1)
         meld.columnconfigure(0, weight=1)
 
@@ -145,6 +148,7 @@ class KartendatenTab(ttk.Frame):
         self.meld_tree.tag_configure("gelb", foreground="#8A5A00")
         self.meld_tree.tag_configure("info", foreground=stil.GEDAEMPFT)
         self.meld_tree.tag_configure("ok", foreground="#2E6B2E")
+        stil.zebra_konfigurieren(self.meld_tree)
 
     # ------------------------------------------------------------------ Daten
 
@@ -197,7 +201,7 @@ class KartendatenTab(ttk.Frame):
         self.hinweis_var.set(" · ".join(teile))
 
         neuester = None
-        for t in reversed(self._tage):
+        for position, t in enumerate(reversed(self._tage), start=1):
             s = t["summen"]
             unvoll = s["unbekannt"] > 0
             datum = "%s %s" % (kartendaten.WOCHENTAGE[t["tag"].weekday()],
@@ -205,7 +209,7 @@ class KartendatenTab(ttk.Frame):
             if unvoll:
                 datum += " *"
             iid = t["tag"].isoformat()
-            tags = []
+            tags = stil.zebra_tags(position)
             if t["verstoesse"]:
                 tags.append("warn")
             elif unvoll:
@@ -466,12 +470,12 @@ class KartendatenTab(ttk.Frame):
                                    "an diesem Tag.", ""),
                 tags=["ok"])
             return
-        for m in meldungen:
+        for nummer, m in enumerate(meldungen, start=1):
             self.meld_tree.insert(
                 "", "end",
                 values=(m["zeit"] or "", m["art"], m["text"],
                         m.get("recht") or ""),
-                tags=[m["schwere"]])
+                tags=stil.zebra_tags(nummer, [m["schwere"]]))
 
 
 class RechtsgrundlagenTab(ttk.Frame):
@@ -498,9 +502,10 @@ class RechtsgrundlagenTab(ttk.Frame):
                   foreground=stil.GEDAEMPFT,
                   font=stil.schrift(stil.PT_KLEIN)).grid(row=1, column=0, sticky="w")
 
-        tabelle = ttk.LabelFrame(self, text="Kennzahlen der geladenen Karte",
-                                 padding=(10, 8))
-        tabelle.grid(row=1, column=0, sticky="nsew")
+        tabelle_karte = stil.Karte(self, titel="Kennzahlen der geladenen Karte",
+                                   padding=(10, 8))
+        tabelle_karte.grid(row=1, column=0, sticky="nsew")
+        tabelle = tabelle_karte.innen
         tabelle.rowconfigure(0, weight=1)
         tabelle.columnconfigure(0, weight=1)
         spalten = (("status", "Bewertung", 82, "center"),
@@ -523,6 +528,7 @@ class RechtsgrundlagenTab(ttk.Frame):
         self.tree.tag_configure("warn", foreground="#8A5A00")
         self.tree.tag_configure("ok", foreground="#2E6B2E")
         self.tree.tag_configure("info", foreground=stil.GEDAEMPFT)
+        stil.zebra_konfigurieren(self.tree)
 
         ttk.Label(self, text="Rechtsgrundlagen und Grenzwerte",
                   foreground=stil.NAVY,
@@ -590,9 +596,9 @@ class RechtsgrundlagenTab(ttk.Frame):
         namen = {"rot": "Verstoß", "warn": "Hinweis",
                  "ok": "in Ordnung", "info": "Info"}
         zahlen = kartendaten.kennzahlen(tage)
-        for z in zahlen:
+        for nummer, z in enumerate(zahlen, start=1):
             self.tree.insert(
-                "", "end", tags=[z["status"]],
+                "", "end", tags=stil.zebra_tags(nummer, [z["status"]]),
                 values=(namen.get(z["status"], z["status"]),
                         z["name"], z["wert"], z["grenze"],
                         z["recht"] or ""))

@@ -50,10 +50,14 @@ class App(tk.Tk):
         self.title("CardMaster LS – Fahrerkarte")
         self.minsize(1080, 720)
         stil.anwenden(self)
+        stil.skalierung_setzen(self)
         self._fenster_icon()
         self._update_thread = None            # Hintergrund-Update-Prüfung
         self._update_url = spesen_lib.RELEASES_SEITE
+        self.ddd_ordner_var = tk.StringVar()  # Speicherorte (Einstellungen)
+        self.pdf_ordner_var = tk.StringVar()
         self._oberflaeche()
+        stil.hand_cursor(self)
         self.info = None                      # Ergebnis von spesen_lib.lade_ddd
         self.kartenstaende = spesen_lib.load_state()["karten"]
         self._orte_thread = None              # Hintergrund-Suche Ortsnamen
@@ -61,30 +65,58 @@ class App(tk.Tk):
         self._heim_text = ""                  # zuletzt geprüfter Heimatort-Text
         self._fern_cache = None               # zuletzt erzeugte Tageszeilen
         self._nacht_im_lkw = None             # Nahverkehr: Nächte im Lkw
+        self._fenster_platzieren()
+        self.protocol("WM_DELETE_WINDOW", self._beenden)
         # Beim Start einmalig nach einer neueren Version suchen.
         if spesen_lib.update_pruefen_aktiv():
             self.after(800, self.update_suchen)
+
+    def _fenster_platzieren(self):
+        """Letzte Fenstergröße/-position wiederherstellen, sonst mittig."""
+        gespeichert = (spesen_lib.lade_einstellungen().get("fenster")
+                       or {}).get("geometry")
+        if gespeichert:
+            try:
+                self.geometry(gespeichert)
+                return
+            except tk.TclError:
+                pass
+        breite, hoehe = 1180, 800
+        self.update_idletasks()
+        sichtbar_b = self.winfo_screenwidth()
+        sichtbar_h = self.winfo_screenheight()
+        x = max(0, (sichtbar_b - breite) // 2)
+        y = max(0, (sichtbar_h - hoehe) // 3)
+        self.geometry("%dx%d+%d+%d" % (breite, hoehe, x, y))
+
+    def _beenden(self):
+        """Fenstergröße/-position merken und schließen."""
+        try:
+            werte = spesen_lib.lade_einstellungen()
+            werte["fenster"] = {"geometry": self.winfo_geometry()}
+            spesen_lib.speichere_einstellungen(werte)
+        except OSError:
+            pass
+        self.destroy()
 
     def _fenster_icon(self):
         """Fenster- und Taskleistensymbol (cardmaster.ico)."""
         assets.setze_fenster_icon(self)
 
     def _kopfleiste(self):
-        """Dunkle Kopfleiste mit Firmen-/Produktlogo und Programmnamen."""
+        """Dunkle Kopfleiste mit sanftem Verlauf, Logo und Programmnamen."""
         firmen = assets.lade("kopf_firmenlogo")
         produkt = assets.lade("kopf_produktlogo")
-        if firmen is None and produkt is None:
-            return False
 
-        kopf = tk.Frame(self, background=stil.NAVY)
+        kopf = tk.Canvas(self, height=68, highlightthickness=0, bd=0,
+                         background=stil.NAVY)
         kopf.grid(row=0, column=0, sticky="ew")
-        kopf.columnconfigure(1, weight=1)
+        self.kopf_canvas = kopf
 
+        # Weiße Logo-Platte links
+        self._kopf_platte = None
         if firmen is not None or produkt is not None:
-            platte = tk.Frame(kopf, background=stil.WEISS,
-                              padx=12, pady=7)
-            platte.grid(row=0, column=0, sticky="w",
-                        padx=(16, 0), pady=11)
+            platte = tk.Frame(kopf, background=stil.WEISS, padx=12, pady=7)
             if firmen is not None:
                 tk.Label(platte, image=firmen, background=stil.WEISS,
                          borderwidth=0).pack(side="left")
@@ -94,21 +126,45 @@ class App(tk.Tk):
             if produkt is not None:
                 tk.Label(platte, image=produkt, background=stil.WEISS,
                          borderwidth=0).pack(side="left")
+            self._kopf_platte = kopf.create_window(16, 34, window=platte,
+                                                   anchor="w")
 
+        # Rechts: Produktname, Untertitel und Versions-Kennzeichen
         rechts = tk.Frame(kopf, background=stil.NAVY)
-        rechts.grid(row=0, column=2, sticky="e", padx=18)
         tk.Label(rechts, text="CardMaster LS", background=stil.NAVY,
                  foreground=stil.WEISS,
                  font=stil.schrift(stil.PT_GROSS, True)).pack(anchor="e")
-        tk.Label(rechts,
-                 text="Fahrerkarte · Spesen · Rechtsgrundlagen",
+        zeile = tk.Frame(rechts, background=stil.NAVY)
+        zeile.pack(anchor="e")
+        tk.Label(zeile, text="Fahrerkarte · Spesen · Rechtsgrundlagen",
                  background=stil.NAVY, foreground="#B9C2D6",
-                 font=stil.schrift(stil.PT_KLEIN)).pack(anchor="e")
+                 font=stil.schrift(stil.PT_KLEIN)).pack(side="left")
+        tk.Label(zeile, text=" v%s " % spesen_lib.VERSION,
+                 background=stil.NAVY_HELL, foreground=stil.WEISS,
+                 font=stil.schrift(stil.PT_MINI, True)).pack(
+            side="left", padx=(8, 0))
+        self._kopf_rechts = kopf.create_window(0, 34, window=rechts, anchor="e")
 
-        # schmale Markenlinie unter der Kopfleiste
+        kopf.bind("<Configure>", self._kopf_zeichnen)
         tk.Frame(self, background=stil.GRUEN, height=3).grid(
             row=1, column=0, sticky="ew")
         return True
+
+    def _kopf_zeichnen(self, ereignis=None):
+        """Farbverlauf der Kopfleiste zeichnen und Elemente ausrichten."""
+        kopf = self.kopf_canvas
+        breite = ereignis.width if ereignis else kopf.winfo_width()
+        hoehe = ereignis.height if ereignis else kopf.winfo_height()
+        if breite <= 1 or hoehe <= 1:
+            return
+        # Nur neu zeichnen, wenn sich die Breite wirklich geändert hat.
+        if getattr(self, "_kopf_breite", None) != breite:
+            stil.verlauf(kopf, breite, hoehe, stil.NAVY, stil.NAVY_HELL)
+            self._kopf_breite = breite
+        if self._kopf_rechts is not None:
+            kopf.coords(self._kopf_rechts, breite - 18, hoehe / 2)
+        if self._kopf_platte is not None:
+            kopf.coords(self._kopf_platte, 16, hoehe / 2)
 
     def _oberflaeche(self):
         zeile = 0
@@ -152,12 +208,20 @@ class App(tk.Tk):
         notiz.add(self.tab_spesen, text=" Spesenzettel", **extra)
         self._spesenseite(self.tab_spesen)
 
+        # Einstellungen (Updates und Speicherorte)
+        self.tab_einst = ttk.Frame(notiz)
+        bild_einst = assets.lade("tab_einstellungen")
+        extra = {"image": bild_einst, "compound": "left"} \
+            if bild_einst is not None else {}
+        notiz.add(self.tab_einst, text=" Einstellungen", **extra)
+        self._einstellungen_seite(self.tab_einst)
+
         self.log("Bereit. Karte einstecken und „Karte auslesen“ wählen, "
                  "oder eine vorhandene .ddd-Datei öffnen.")
 
     def _startseite(self, rahmen):
         rahmen.columnconfigure(0, weight=1)
-        rahmen.rowconfigure(7, weight=1)
+        rahmen.rowconfigure(2, weight=1)
 
         ttk.Label(rahmen, text="Fahrerkarte und Spesenzettel",
                   foreground=stil.NAVY,
@@ -170,18 +234,26 @@ class App(tk.Tk):
                        "die Reisekostenabrechnung.").grid(
             row=1, column=0, sticky="w", padx=16, pady=(0, 10))
 
-        # --- Update-Hinweis ----------------------------------------------
-        self._update_leiste(rahmen, row=2)
+        # --- Zwei Spalten: links Eingaben, rechts Übersicht/Protokoll ----
+        spalten = ttk.Frame(rahmen)
+        spalten.grid(row=2, column=0, sticky="nsew", padx=16)
+        spalten.columnconfigure(0, weight=3)
+        spalten.columnconfigure(1, weight=2)
+        spalten.rowconfigure(0, weight=1)
+
+        links = ttk.Frame(spalten)
+        links.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        links.columnconfigure(0, weight=1)
 
         # --- Datenquelle -------------------------------------------------
-        quelle = ttk.LabelFrame(rahmen, text="Datenquelle",
-                                padding=(14, 10))
-        quelle.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 8))
+        quelle_karte = stil.Karte(links, titel="Datenquelle", padding=(16, 12))
+        quelle_karte.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        quelle = quelle_karte.innen
         quelle.columnconfigure(3, weight=1)
         self.btn_karte = ttk.Button(
             quelle, text="Karte auslesen (USB-Kartenleser)",
             image=assets.lade("btn_karte"), compound="left",
-            style="Akzent.TButton", command=self.karte_auslesen)
+            style="Primaer.TButton", command=self.karte_auslesen)
         self.btn_karte.grid(row=0, column=0)
         self.btn_ddd = ttk.Button(
             quelle, text=".ddd-Datei öffnen …",
@@ -193,16 +265,30 @@ class App(tk.Tk):
             ttk.Label(quelle, text="pyscard fehlt – Kartenlesen nicht möglich",
                       foreground=stil.ROT).grid(row=0, column=2, padx=8)
 
+        # Fortschritt (nur während Auslesen/Erstellen sichtbar)
+        self.fortschritt = ttk.Progressbar(quelle, mode="indeterminate",
+                                           length=220)
+        self.fortschritt.grid(row=1, column=0, sticky="w", pady=(10, 0))
+        self.fortschritt.grid_remove()
+        self.fortschritt_var = tk.StringVar(value="")
+        self.fortschritt_label = ttk.Label(
+            quelle, textvariable=self.fortschritt_var,
+            foreground=stil.GEDAEMPFT, font=stil.schrift(stil.PT_KLEIN))
+        self.fortschritt_label.grid(row=1, column=1, columnspan=3, sticky="w",
+                                    padx=(10, 0), pady=(10, 0))
+        self.fortschritt_label.grid_remove()
+
         self.info_var = tk.StringVar(
             value="Noch keine Daten geladen — Karte auslesen oder .ddd öffnen.")
-        ttk.Label(rahmen, textvariable=self.info_var, justify="left",
-                  wraplength=1000, foreground=stil.TEXT).grid(
-            row=4, column=0, sticky="w", padx=16, pady=(0, 8))
+        ttk.Label(links, textvariable=self.info_var, justify="left",
+                  wraplength=640, foreground=stil.TEXT).grid(
+            row=1, column=0, sticky="w", pady=(0, 8))
 
         # --- Kopfdaten ----------------------------------------------------
-        kopf = ttk.LabelFrame(rahmen, text="Kopfdaten für das Formular",
-                              padding=(14, 10))
-        kopf.grid(row=5, column=0, sticky="ew", padx=16, pady=(0, 8))
+        kopf_karte = stil.Karte(links, titel="Kopfdaten für das Formular",
+                                padding=(16, 12))
+        kopf_karte.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+        kopf = kopf_karte.innen
         kopf.columnconfigure(1, weight=1)
         ttk.Label(kopf, text="Name:").grid(row=0, column=0, sticky="w")
         self.name_var = tk.StringVar()
@@ -234,7 +320,7 @@ class App(tk.Tk):
             row=1, column=3, columnspan=3, sticky="w", padx=(12, 0),
             pady=(6, 0))
         ttk.Label(kopf, foreground=stil.GEDAEMPFT, font=stil.schrift(stil.PT_KLEIN),
-                  wraplength=900,
+                  wraplength=620,
                   text="Mit Heimatort entsteht für jeden Tag eine Zeile "
                        "„Heimatort – Zwischenort – Heimatort“. Ob Nah- oder "
                        "Fernverkehr gilt, wird auf der Seite „Spesenzettel“ "
@@ -242,15 +328,147 @@ class App(tk.Tk):
                        "des Heimatorts nachgefragt.").grid(
             row=2, column=0, columnspan=6, sticky="w", pady=(4, 0))
 
+        links.rowconfigure(3, weight=1)
+
+        # --- rechte Spalte: Übersicht, Wechsel, Protokoll ----------------
+        rechts = ttk.Frame(spalten)
+        rechts.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        rechts.columnconfigure(0, weight=1)
+        rechts.rowconfigure(2, weight=1)
+
+        uebersicht_karte = stil.Karte(rechts, titel="Übersicht",
+                                      padding=(16, 12))
+        uebersicht_karte.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        uebersicht = uebersicht_karte.innen
+        uebersicht.columnconfigure(0, weight=1)
+
+        # Leerer Zustand: Symbol, Hinweis und Hauptknopf
+        self.leer_rahmen = ttk.Frame(uebersicht)
+        self.leer_rahmen.grid(row=0, column=0, sticky="w")
+        bild_karte = (assets.lade("icon_fahrerkarte_transparent")
+                      or assets.lade("icon_fahrerkarte"))
+        if bild_karte is not None:
+            ttk.Label(self.leer_rahmen, image=bild_karte).pack(
+                side="left", padx=(0, 14))
+        leer_rechts = ttk.Frame(self.leer_rahmen)
+        leer_rechts.pack(side="left")
+        ttk.Label(leer_rechts, text="Noch keine Karte geladen",
+                  foreground=stil.NAVY,
+                  font=stil.schrift(stil.PT_UNTERTITEL, True)).pack(anchor="w")
+        ttk.Label(leer_rechts, foreground=stil.GEDAEMPFT,
+                  font=stil.schrift(stil.PT_TEXT), wraplength=300,
+                  text="Karte einstecken und „Karte auslesen“ wählen — oder "
+                       "einen vorhandenen .ddd-Download öffnen."
+                  ).pack(anchor="w", pady=(2, 8))
+        ttk.Button(leer_rechts, text="Karte auslesen",
+                   image=assets.lade("btn_karte"), compound="left",
+                   style="Primaer.TButton",
+                   command=self.karte_auslesen).pack(anchor="w")
+
+        # Kennzahl-Kacheln (nach dem Laden), 2 × 2
+        self.kachel_rahmen = ttk.Frame(uebersicht)
+        self.kachel_rahmen.grid(row=0, column=0, sticky="ew")
+        self.kacheln = {}
+        for spalte in range(2):
+            self.kachel_rahmen.columnconfigure(spalte, weight=1)
+        for index, (schluessel, beschriftung) in enumerate((
+                ("fahrer", "Fahrer"), ("tage", "Tage"),
+                ("verstoesse", "Verstöße"), ("offen", "Offene Fahrten"))):
+            self._kachel_bauen(self.kachel_rahmen, index // 2, index % 2,
+                               schluessel, beschriftung)
+        self.kachel_rahmen.grid_remove()
+
+        self.uebersicht_var = tk.StringVar(value="")
+        ttk.Label(uebersicht, textvariable=self.uebersicht_var,
+                  justify="left", wraplength=400, foreground=stil.GEDAEMPFT,
+                  font=stil.schrift(stil.PT_KLEIN)).grid(
+            row=1, column=0, sticky="w", pady=(8, 0))
+
+        wechsel_karte = stil.Karte(rechts, titel="Ansicht wechseln",
+                                   padding=(16, 12))
+        wechsel_karte.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        wechsel = wechsel_karte.innen
+        ttk.Button(wechsel, text="Kartendaten ansehen",
+                   image=assets.lade("tab_kartendaten"), compound="left",
+                   command=lambda: self.notiz.select(self.tab_karten)).grid(
+            row=0, column=0)
+        ttk.Button(wechsel, text="Rechtsgrundlagen",
+                   image=assets.lade("tab_recht"), compound="left",
+                   command=lambda: self.notiz.select(self.tab_recht)).grid(
+            row=0, column=1, padx=8)
+        ttk.Button(wechsel, text="Spesenzettel",
+                   image=assets.lade("tab_spesen"), compound="left",
+                   command=lambda: self.notiz.select(self.tab_spesen)).grid(
+            row=0, column=2)
+
+        # --- Protokoll ----------------------------------------------------
+        proto_karte = stil.Karte(rechts, titel="Protokoll", padding=(10, 8))
+        proto_karte.grid(row=2, column=0, sticky="nsew")
+        proto = proto_karte.innen
+        proto.columnconfigure(0, weight=1)
+        proto.rowconfigure(0, weight=1)
+        self.log_text = tk.Text(
+            proto, height=5, state="disabled", wrap="word",
+            font=stil.schrift_fest(stil.PT_TEXT), background=stil.PANEL,
+            foreground=stil.TEXT, relief="flat", borderwidth=0,
+            padx=10, pady=8, insertbackground=stil.NAVY,
+            selectbackground=stil.AUSWAHL, selectforeground=stil.ROT_DUNKEL)
+        self.log_text.grid(row=0, column=0, sticky="nsew")
+        log_balken = ttk.Scrollbar(proto, orient="vertical",
+                                   command=self.log_text.yview)
+        log_balken.grid(row=0, column=1, sticky="ns")
+        self.log_text.configure(yscrollcommand=log_balken.set)
+        self.log_text.tag_configure("zeit", foreground=stil.GRAU)
+        self.log_text.tag_configure("info", foreground=stil.TEXT)
+        self.log_text.tag_configure("warn", foreground="#8A5A00")
+        self.log_text.tag_configure("fehler", foreground=stil.ROT)
+        self.log_text.tag_configure("ok", foreground="#2E6B2E")
+
+    def _kachel_bauen(self, parent, zeile, spalte, schluessel, beschriftung):
+        """Eine Kennzahl-Kachel (kleine Beschriftung, großer Wert)."""
+        rahmen = tk.Frame(parent, background=stil.WEISS,
+                          highlightbackground=stil.RAND, highlightthickness=1,
+                          padx=12, pady=8)
+        rahmen.grid(row=zeile, column=spalte, sticky="nsew",
+                    padx=(0, 8), pady=(0, 8))
+        tk.Label(rahmen, text=beschriftung.upper(), background=stil.WEISS,
+                 foreground=stil.GEDAEMPFT,
+                 font=stil.schrift(stil.PT_MINI, True)).pack(anchor="w")
+        wert = tk.Label(rahmen, text="—", background=stil.WEISS,
+                        foreground=stil.NAVY, anchor="w",
+                        font=stil.schrift(stil.PT_GROSS, True))
+        wert.pack(anchor="w")
+        self.kacheln[schluessel] = wert
+
+    # ------------------------------------------------------- Einstellungen
+
+    def _einstellungen_seite(self, rahmen):
+        """Eigener Reiter: Update-Prüfung und Speicherorte."""
+        rahmen.columnconfigure(0, weight=1)
+        rahmen.rowconfigure(4, weight=1)
+
+        ttk.Label(rahmen, text="Einstellungen",
+                  foreground=stil.NAVY,
+                  font=stil.schrift(stil.PT_HERO, True)).grid(
+            row=0, column=0, sticky="w", padx=16, pady=(16, 2))
+        ttk.Label(rahmen, foreground=stil.GEDAEMPFT,
+                  font=stil.schrift(stil.PT_TEXT),
+                  text="Updates prüfen und festlegen, wo Karten-Downloads "
+                       "und Spesenzettel gespeichert werden.").grid(
+            row=1, column=0, sticky="w", padx=16, pady=(0, 10))
+
+        # --- Updates ------------------------------------------------------
+        updates_karte = stil.Karte(rahmen, titel="Updates", padding=(16, 12))
+        updates_karte.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 8))
+        self._update_leiste(updates_karte.innen)
+
         # --- Speicherorte -------------------------------------------------
         # Standard bleibt Dokumente\CardMaster LS; .ddd-Downloads und
         # Spesenzettel-PDFs koennen getrennt umgestellt werden.
-        orte = ttk.LabelFrame(rahmen, text="Speicherorte",
-                              padding=(14, 10))
-        orte.grid(row=6, column=0, sticky="ew", padx=16, pady=(0, 8))
+        orte_karte = stil.Karte(rahmen, titel="Speicherorte", padding=(16, 12))
+        orte_karte.grid(row=3, column=0, sticky="new", padx=16)
+        orte = orte_karte.innen
         orte.columnconfigure(1, weight=1)
-        self.ddd_ordner_var = tk.StringVar()
-        self.pdf_ordner_var = tk.StringVar()
         for zeile, beschriftung, variable, schluessel in (
                 (0, ".ddd-Downloads:", self.ddd_ordner_var, "ddd_ordner"),
                 (1, "Spesenzettel (PDF):", self.pdf_ordner_var,
@@ -266,95 +484,44 @@ class App(tk.Tk):
             ttk.Button(orte, text="Standard",
                        command=lambda s=schluessel: self.ordner_standard(s)
                        ).grid(row=zeile, column=3, padx=(4, 0), pady=(0, 3))
-        ttk.Label(orte, foreground=stil.GEDAEMPFT, font=stil.schrift(stil.PT_KLEIN),
+        ttk.Label(orte, foreground=stil.GEDAEMPFT,
+                  font=stil.schrift(stil.PT_KLEIN), wraplength=760,
                   text="Abrechnungsstand, Ortscache und Einstellungen "
                        "bleiben im Datenordner Dokumente\\CardMaster LS."
                   ).grid(row=2, column=0, columnspan=4, sticky="w",
                          pady=(5, 0))
         self._ordner_anzeigen()
 
-        # --- Übersicht und Wechsel zu den Ansichten ----------------------
-        unten = ttk.Frame(rahmen)
-        unten.grid(row=7, column=0, sticky="nsew", padx=16)
-        unten.columnconfigure(0, weight=1)
-        unten.rowconfigure(1, weight=1)
-
-        uebersicht = ttk.LabelFrame(unten, text="Übersicht",
-                                    padding=(14, 10))
-        uebersicht.grid(row=0, column=0, sticky="nsew", padx=(0, 8),
-                        pady=(0, 8))
-        self.uebersicht_var = tk.StringVar(
-            value="Noch keine Karte geladen.")
-        ttk.Label(uebersicht, textvariable=self.uebersicht_var,
-                  justify="left", wraplength=520,
-                  font=stil.schrift(stil.PT_TEXT)).grid(
-            row=0, column=0, sticky="w")
-
-        wechsel = ttk.LabelFrame(unten, text="Ansicht wechseln",
-                                 padding=(14, 10))
-        wechsel.grid(row=0, column=1, sticky="ne", pady=(0, 8))
-        ttk.Button(wechsel, text="Kartendaten ansehen",
-                   image=assets.lade("tab_kartendaten"), compound="left",
-                   command=lambda: self.notiz.select(self.tab_karten)).grid(
-            row=0, column=0)
-        ttk.Button(wechsel, text="Rechtsgrundlagen",
-                   image=assets.lade("tab_recht"), compound="left",
-                   command=lambda: self.notiz.select(self.tab_recht)).grid(
-            row=0, column=1, padx=8)
-        ttk.Button(wechsel, text="Spesenzettel",
-                   image=assets.lade("tab_spesen"), compound="left",
-                   command=lambda: self.notiz.select(self.tab_spesen)).grid(
-            row=0, column=2)
-
-        # --- Protokoll ----------------------------------------------------
-        proto = ttk.LabelFrame(unten, text="Protokoll", padding=(8, 6))
-        proto.grid(row=1, column=0, columnspan=2, sticky="nsew")
-        proto.columnconfigure(0, weight=1)
-        proto.rowconfigure(0, weight=1)
-        unten.rowconfigure(1, weight=1)
-        self.log_text = tk.Text(
-            proto, height=5, state="disabled", wrap="word",
-            font=stil.schrift_fest(stil.PT_TEXT), background=stil.PANEL,
-            foreground=stil.TEXT, relief="flat", borderwidth=0,
-            padx=10, pady=8, insertbackground=stil.NAVY,
-            selectbackground=stil.AUSWAHL, selectforeground=stil.ROT_DUNKEL)
-        self.log_text.grid(row=0, column=0, sticky="nsew")
-        log_balken = ttk.Scrollbar(proto, orient="vertical",
-                                   command=self.log_text.yview)
-        log_balken.grid(row=0, column=1, sticky="ns")
-        self.log_text.configure(yscrollcommand=log_balken.set)
-
     # ------------------------------------------------------------- Updates
 
-    def _update_leiste(self, rahmen, row):
-        """Hinweisleiste oben auf der Startseite (Version und Update)."""
-        self.update_frame = tk.Frame(rahmen, background=stil.HINTERGRUND,
-                                     highlightbackground=stil.RAND,
-                                     highlightthickness=1)
-        self.update_frame.grid(row=row, column=0, sticky="ew", padx=16,
-                               pady=(0, 10))
-        self.update_frame.columnconfigure(2, weight=1)
+    def _update_leiste(self, parent):
+        """Update-Status mit Knöpfen (im Einstellungen-Reiter)."""
+        self.update_frame = tk.Frame(parent, background=stil.WEISS)
+        self.update_frame.grid(row=0, column=0, sticky="ew")
+        self.update_frame.columnconfigure(1, weight=1)
         self.update_punkt = tk.Label(
-            self.update_frame, text="●", background=stil.HINTERGRUND,
+            self.update_frame, text="●", background=stil.WEISS,
             foreground=stil.GEDAEMPFT, font=stil.schrift(stil.PT_TEXT))
-        self.update_punkt.grid(row=0, column=0, padx=(12, 6), pady=7)
+        self.update_punkt.grid(row=0, column=0, padx=(0, 6), pady=(0, 4))
         self.update_var = tk.StringVar(
             value="Version %s" % spesen_lib.VERSION)
         self.update_label = tk.Label(
             self.update_frame, textvariable=self.update_var,
-            background=stil.HINTERGRUND, foreground=stil.TEXT,
-            font=stil.schrift(stil.PT_TEXT), anchor="w", justify="left")
+            background=stil.WEISS, foreground=stil.TEXT, anchor="w",
+            justify="left", wraplength=560,
+            font=stil.schrift(stil.PT_TEXT))
         self.update_label.grid(row=0, column=1, columnspan=2, sticky="w",
-                               pady=7)
+                               pady=(0, 4))
         self.btn_update = ttk.Button(self.update_frame,
                                      text="Zum Download",
                                      style="Akzent.TButton",
                                      command=self.update_oeffnen)
-        self.btn_update.grid(row=0, column=3, padx=(8, 4), pady=5)
+        self.btn_update.grid(row=1, column=1, sticky="w", padx=(0, 8),
+                             pady=(4, 0))
         self.btn_update.grid_remove()
         ttk.Button(self.update_frame, text="Nach Updates suchen",
                    command=lambda: self.update_suchen(manuell=True)).grid(
-            row=0, column=4, padx=(4, 12), pady=5)
+            row=1, column=2, sticky="w", pady=(4, 0))
         self.update_pruef_var = tk.BooleanVar(
             value=spesen_lib.update_pruefen_aktiv())
         tk.Checkbutton(
@@ -362,12 +529,11 @@ class App(tk.Tk):
             text="beim Start automatisch nach Updates suchen",
             variable=self.update_pruef_var,
             command=self.update_pruefen_umschalten,
-            background=stil.HINTERGRUND, activebackground=stil.HINTERGRUND,
+            background=stil.WEISS, activebackground=stil.WEISS,
             foreground=stil.TEXT, selectcolor=stil.WEISS,
             font=stil.schrift(stil.PT_KLEIN), borderwidth=0,
             highlightthickness=0).grid(
-            row=1, column=1, columnspan=4, sticky="w", padx=(0, 12),
-            pady=(0, 7))
+            row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
 
     def update_suchen(self, manuell=False):
         """Im Hintergrund nach einer neueren Version auf GitHub suchen."""
@@ -505,9 +671,10 @@ class App(tk.Tk):
             row=1, column=0, sticky="w", padx=16, pady=(0, 8))
 
         # --- Fahrten ------------------------------------------------------
-        fahrten = ttk.LabelFrame(rahmen, text="Noch nicht abgerechnete Fahrten",
-                                 padding=(14, 10))
-        fahrten.grid(row=3, column=0, sticky="nsew", padx=16, pady=(0, 8))
+        fahrten_karte = stil.Karte(
+            rahmen, titel="Noch nicht abgerechnete Fahrten", padding=(16, 12))
+        fahrten_karte.grid(row=3, column=0, sticky="nsew", padx=16, pady=(0, 8))
+        fahrten = fahrten_karte.innen
         fahrten.columnconfigure(0, weight=1)
         fahrten.rowconfigure(1, weight=1)
         self.fahrten_frame = fahrten
@@ -577,6 +744,7 @@ class App(tk.Tk):
                                command=self.tree.yview)
         balken.grid(row=1, column=1, sticky="ns")
         self.tree.configure(yscrollcommand=balken.set)
+        stil.zebra_konfigurieren(self.tree)
 
         self.summe_var = tk.StringVar(value="")
         ttk.Label(fahrten, textvariable=self.summe_var).grid(
@@ -588,7 +756,8 @@ class App(tk.Tk):
         self.btn_erstellen = ttk.Button(
             aktion, text="Spesenzettel erstellen (PDF)",
             image=assets.lade("btn_erstellen"), compound="left",
-            style="Akzent.TButton", command=self.erstellen, state="disabled")
+            style="PrimaerRot.TButton", command=self.erstellen,
+            state="disabled")
         self.btn_erstellen.grid(row=0, column=0)
         self.oeffnen_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(aktion, text="PDF nach dem Erstellen öffnen",
@@ -617,13 +786,48 @@ class App(tk.Tk):
             pass
 
     def _log_einfuegen(self, text):
+        """Eine Protokollzeile mit Zeitstempel und Farbstufe anhängen."""
         zeit = datetime.now().strftime("%H:%M:%S")
         self.log_text.configure(state="normal")
-        self.log_text.insert("end", "[%s] %s\n" % (zeit, text))
+        self.log_text.insert("end", "[%s] " % zeit, ("zeit",))
+        self.log_text.insert("end", "%s\n" % text, (self._log_stufe(text),))
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
 
+    @staticmethod
+    def _log_stufe(text):
+        """Farbstufe einer Protokollzeile anhand des Textanfangs bestimmen."""
+        oben = text.lstrip().upper()
+        if oben.startswith("FEHLER") or "TRACEBACK" in oben:
+            return "fehler"
+        if oben.startswith("WARN") or oben.startswith("ACHTUNG"):
+            return "warn"
+        if oben.startswith("OK") or "FERTIG" in oben or "ERSTELLT" in oben:
+            return "ok"
+        return "info"
+
     # --------------------------------------------------------- Datenquelle
+
+    def _fortschritt_an(self, text="Bitte warten …"):
+        """Dünnen Fortschrittsbalken mit Statustext einblenden."""
+        try:
+            self.fortschritt_var.set(text)
+            self.fortschritt.grid()
+            self.fortschritt_label.grid()
+            self.fortschritt.start(14)
+            self.update_idletasks()
+        except tk.TclError:
+            pass
+
+    def _fortschritt_aus(self):
+        """Fortschrittsbalken wieder ausblenden."""
+        try:
+            self.fortschritt.stop()
+            self.fortschritt.grid_remove()
+            self.fortschritt_label.grid_remove()
+            self.fortschritt_var.set("")
+        except tk.TclError:
+            pass
 
     def _busy(self, an, text=""):
         zustand = "disabled" if an else "!disabled"
@@ -632,6 +836,10 @@ class App(tk.Tk):
         self.btn_heim.state([zustand])
         self.btn_erstellen.state(
             ["disabled"] if an or not self._anzeige() else ["!disabled"])
+        if an:
+            self._fortschritt_an(text or "Bitte warten …")
+        else:
+            self._fortschritt_aus()
         if text:
             self.log(text)
 
@@ -791,24 +999,36 @@ class App(tk.Tk):
         self.notiz.select(self.tab_start)
 
     def _uebersicht_aktualisieren(self):
-        """Kurzstatistik auf der Startseite."""
+        """Kacheln bzw. Leerzustand auf der Startseite auffrischen."""
         if not self.info:
-            self.uebersicht_var.set("Noch keine Karte geladen.")
+            self.kachel_rahmen.grid_remove()
+            self.leer_rahmen.grid()
+            self.uebersicht_var.set("")
             return
+
         info = self.info
-        zeilen = ["Fahrer: %s · Karte %s"
-                  % (info.get("name", "?"),
-                     info.get("kartennummer", "?"))]
+        self.leer_rahmen.grid_remove()
+        self.kachel_rahmen.grid()
+
         tage = self.tab_karten._tage
+        verstoesse = sum(len(t["verstoesse"]) for t in tage) if tage else 0
+        offen = [t for t in self._anzeige() if not t.get("leer")]
+
+        self._kachel_setzen("fahrer", info.get("name") or "—")
+        self._kachel_setzen("tage", str(len(tage)) if tage else "0")
+        self._kachel_setzen("verstoesse", str(verstoesse),
+                            farbe=stil.ROT if verstoesse else "#2E6B2E")
+        self._kachel_setzen("offen", str(len(offen)),
+                            farbe=stil.ROT if offen else stil.NAVY)
+
+        zeilen = ["Karte %s" % (info.get("kartennummer") or "?")]
         if tage:
-            verstoesse = sum(len(t["verstoesse"]) for t in tage)
             hinweise = sum(1 for t in tage for m in t["meldungen"]
                            if m["art"] == "Hinweis")
             zeilen.append(
-                "Kartendaten: %d Tage (%s – %s) · %d Verstöße · %d Hinweise"
+                "Kartendaten: %d Tage (%s – %s) · %d Hinweise"
                 % (len(tage), tage[0]["tag"].strftime("%d.%m.%Y"),
-                   tage[-1]["tag"].strftime("%d.%m.%Y"),
-                   verstoesse, hinweise))
+                   tage[-1]["tag"].strftime("%d.%m.%Y"), hinweise))
         else:
             zeilen.append("Kartendaten: keine Tagesaktivitäten gespeichert")
         if info.get("gen2"):
@@ -824,10 +1044,17 @@ class App(tk.Tk):
                    len(ks.get("blaetter", []))))
         else:
             zeilen.append("Abrechnung: noch kein Blatt erstellt")
-        self.uebersicht_var.set("\n".join(zeilen))
+        self.uebersicht_var.set("   ·   ".join(zeilen))
         self.spesen_info_var.set(
             "Karte %s — %s · Datenquelle und Kopfdaten auf der Startseite."
             % (info.get("kartennummer", "?"), info.get("name", "")))
+
+    def _kachel_setzen(self, schluessel, wert, farbe=None):
+        """Wert einer Kennzahl-Kachel setzen (optional mit Farbe)."""
+        label = self.kacheln.get(schluessel)
+        if label is None:
+            return
+        label.configure(text=wert, foreground=farbe or stil.NAVY)
 
     def _orte_suchen(self):
         """Ortsnamen im Hintergrund ermitteln (eine Anfrage je 1,1 s),
@@ -1047,10 +1274,11 @@ class App(tk.Tk):
             self.tree.delete(iid)
         zeilen = self._anzeige()
         nr = 0
-        for t in zeilen:
+        for position, t in enumerate(zeilen, start=1):
+            tags = stil.zebra_tags(position)
             if t.get("leer"):
                 self.tree.insert("", "end", values=(
-                    "", "", "", "", "", "", "", "", ""))
+                    "", "", "", "", "", "", "", "", ""), tags=tags)
                 continue
             nr += 1
             self.tree.insert("", "end", values=(
@@ -1058,7 +1286,7 @@ class App(tk.Tk):
                 t["dauer"], t["km"],
                 spesen_lib.ortstext(t, "start"),
                 spesen_lib.ortstext(t, "ziel"),
-                t.get("fahrzeug", "")))
+                t.get("fahrzeug", "")), tags=tags)
         if self._heim is not None:
             self.fahrten_frame.configure(
                 text="Noch nicht abgerechnete Tage (Heimatort %s)"
@@ -1070,6 +1298,8 @@ class App(tk.Tk):
             self.tree.heading("start", text="Start")
             self.tree.heading("ziel", text="Ziel")
         echte = [t for t in zeilen if not t.get("leer")]
+        self._kachel_setzen("offen", str(len(echte)),
+                            farbe=stil.ROT if echte else stil.NAVY)
         if echte and self.info:
             von, bis = spesen_lib.abrechnungsperiode(echte[0]["tag"])
             einheit = "Tage" if self._heim is not None else "Fahrten"
@@ -1157,6 +1387,7 @@ class App(tk.Tk):
                     self._fern_cache = None
                     self._tabelle_aktualisieren()
             nacht_im_lkw = self._nacht_im_lkw
+        self._fortschritt_an("Spesenzettel wird erstellt …")
         try:
             dateien = spesen_lib.erstelle_spesenzettel(
                 self.info, name, abteilung, personal_nr,
@@ -1169,6 +1400,8 @@ class App(tk.Tk):
             self.log(traceback.format_exc())
             messagebox.showerror("Spesenzettel erstellen", str(e))
             return
+        finally:
+            self._fortschritt_aus()
         self.kartenstaende = spesen_lib.load_state()["karten"]
         self._tabelle_aktualisieren()
         self._uebersicht_aktualisieren()
@@ -1181,6 +1414,7 @@ def main():
     argv = sys.argv[1:]
     if argv and argv[0] == "--test":
         return _selbsttest(argv[1] if len(argv) > 1 else None)
+    stil.dpi_aktivieren()
     app = App()
     app.mainloop()
 

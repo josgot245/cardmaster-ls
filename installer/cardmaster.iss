@@ -1,6 +1,6 @@
 ﻿; ============================================================
 ;  CardMaster LS (Fahrerkarte) - Inno-Setup-Skript
-;  Baut:  installer\Ausgabe\CardMaster-Setup-1.4.6.exe
+;  Baut:  installer\Ausgabe\CardMaster-Setup-1.4.7.exe
 ;
 ;  Installation ohne Administrator-Rechte nach
 ;  %LOCALAPPDATA%\Programs\CardMaster LS
@@ -13,7 +13,7 @@
 ; ============================================================
 
 #define AppName "CardMaster LS"
-#define AppVersion "1.4.6"
+#define AppVersion "1.4.7"
 #define AppPublisher "Standardprojekt"
 #define AppExeName "CardMaster LS.exe"
 
@@ -44,7 +44,7 @@ Name: "ger"; MessagesFile: "compiler:Languages\German.isl"
 
 [CustomMessages]
 ger.LaunchApp=CardMaster LS jetzt starten
-ger.DataNote=Hinweis: Abrechnungsstand und Einstellungen liegen in Dokumente\CardMaster LS und bleiben bei einer Deinstallation erhalten. Die Ordner für .ddd-Downloads und Spesenzettel-PDFs lassen sich im Programm unter „Speicherorte“ ändern. Dateien aus der alten Version 1.0 (Dokumente\Spesenzettel) wurden beim ersten Start übernommen.
+ger.DataNote=Hinweis: Abrechnungsstand und Einstellungen liegen in Dokumente\CardMaster LS und bleiben bei einer Deinstallation erhalten. Die Ordner für .ddd-Downloads und Spesenzettel-PDFs lassen sich im Programm im Reiter „Einstellungen“ ändern. Dateien aus der alten Version 1.0 (Dokumente\Spesenzettel) wurden beim ersten Start übernommen.
 
 [Files]
 Source: "dist\CardMaster LS\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
