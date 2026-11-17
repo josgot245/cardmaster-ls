@@ -172,7 +172,7 @@ EINSTELLUNGEN_DATEI = DATA_DIR / "einstellungen.json"  # Speicherorte
 # GitHub-Repository, in dem die Releases samt Setup liegen. Die Startseite
 # vergleicht diese Version mit dem neuesten Release und weist auf eine
 # neuere Fassung hin.
-VERSION = "1.4.8"
+VERSION = "1.4.9"
 GITHUB_REPO = "josgot245/cardmaster-ls"
 RELEASES_SEITE = "https://github.com/%s/releases" % GITHUB_REPO
 
@@ -245,6 +245,26 @@ def setze_ordner(schluessel, pfad):
         werte.pop(schluessel, None)
     speichere_einstellungen(werte)
     return ddd_ordner() if schluessel == "ddd_ordner" else pdf_ordner()
+
+
+# --------------------------------------------------------- Kartenleser
+# Bei mehreren angeschlossenen Lesern kann ein bestimmter gemerkt werden.
+# Leerer Wert bedeutet: automatisch den ersten Leser mit Karte verwenden.
+
+def kartenleser_name():
+    """Gemerkter Kartenleser (Name) oder '' für automatische Wahl."""
+    return str(lade_einstellungen().get("kartenleser") or "").strip()
+
+
+def setze_kartenleser(name):
+    """Kartenleser dauerhaft merken; leerer Name = automatische Wahl."""
+    werte = lade_einstellungen()
+    if name:
+        werte["kartenleser"] = str(name)
+    else:
+        werte.pop("kartenleser", None)
+    speichere_einstellungen(werte)
+    return kartenleser_name()
 
 
 # --------------------------------------------------------- Update-Prüfung

@@ -1,7 +1,7 @@
 CardMaster LS — Spesenzettel aus der Fahrerkarte — Anleitung
 ============================================================
 
-CardMaster LS (Version 1.4.8) liest die digitale Fahrerkarte
+CardMaster LS (Version 1.4.9) liest die digitale Fahrerkarte
 (Tachographenkarte) über einen USB-Kartenleser aus und befüllt daraus
 automatisch den Spesenzettel „Reisekostenabrechnung“ auf dem
 gescannten Originalformular. Zusätzlich zeigt es die Kartendaten des
@@ -11,6 +11,24 @@ Das Fenster erscheint in den Firmenfarben von LS Logistik (Dunkelblau
 #242E45, Rot #9C1006, Grün #94C11C) auf hellen Flächen. Farben,
 Schriften und die Gestaltung der Bedienelemente sind zentral in der
 Datei stil.py hinterlegt und lassen sich dort anpassen.
+
+Neu in Version 1.4.9
+--------------------
+• Tagesverlauf im Reiter „Kartendaten ansehen“ jetzt wie auf dem
+  Tachographen-Ausdruck: fünf Zeilen — eine je Tätigkeit. Links stehen die
+  offiziellen Piktogramme nach VO (EU) 2016/799 (Lenkrad = Fahrt, gekreuzte
+  Hämmer = Arbeit, Quadrat mit Diagonale = Bereitschaft, Bett = Ruhe,
+  Fragezeichen = noch nicht ausgelesen), daneben der Name. Die Zeiträume
+  erscheinen als Balken in der jeweiligen Zeile. Fährt man mit der Maus über
+  einen Balken, erscheint ein Infofeld, z. B. „Fahrtzeit 1h36min“ mit der
+  genauen Uhrzeit.
+• Kartenleser-Auswahl: Im Reiter „Einstellungen“ gibt es jetzt den Abschnitt
+  „Kartenleser“. Sind mehrere Leser angeschlossen, lässt sich ein bestimmter
+  wählen (oder „automatisch“ für den ersten Leser mit Karte); die Auswahl
+  wird gemerkt. Beim Auslesen mit mehreren Lesern fragt das Programm nach.
+• T=1-Rückfall: Findet der Leser/die Karte über das übliche T=0-Protokoll
+  keinen Zugang, versucht das Programm automatisch T=1. Damit funktionieren
+  auch Leser, die nur T=1 sprechen.
 
 Neu in Version 1.4.8
 --------------------
@@ -114,7 +132,7 @@ Neu in Version 1.4.2
 
 Installation (einmalig)
 -----------------------
-Setup starten:   installer\Ausgabe\CardMaster-Setup-1.4.8.exe
+Setup starten:   installer\Ausgabe\CardMaster-Setup-1.4.9.exe
                   (Doppelklick, dann „Weiter“ — keine Administrator-Rechte nötig)
 
 Im Assistenten lässt sich der Installationsordner frei wählen

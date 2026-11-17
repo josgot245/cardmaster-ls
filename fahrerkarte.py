@@ -12,7 +12,8 @@ Karten der 1. Generation (Gen-1, AID "TACHO") und — sofern vorhanden — auch
 die 2. Generation (Gen-2, AID "TACHO_G2" mit GNSS-Orten) werden gelesen.
 
 Ablauf:
-  1. Kartenleser über PC/SC finden und Karte im T=0-Protokoll ansprechen
+  1. Kartenleser über PC/SC finden und Karte ansprechen (T=0, bei
+     Protokoll-Unverträglichkeit Rückfall auf T=1)
   2. Tachograph-Anwendung (AID "TACHO") wählen
   3. Alle Dateien (EFs) der Gen-1-Anwendung lesen:
      EF.ICC / EF.IC (Chip-Daten), Anwendungs-Identifikation, Zertifikate,
@@ -47,8 +48,10 @@ try:
     from smartcard.scard import (
         SCardEstablishContext, SCardReleaseContext, SCardConnect,
         SCardDisconnect, SCardReconnect, SCardTransmit,
-        SCARD_SCOPE_USER, SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0,
-        SCARD_RESET_CARD, SCARD_LEAVE_CARD, SCARD_PCI_T0,
+        SCARD_SCOPE_USER, SCARD_SHARE_SHARED,
+        SCARD_PROTOCOL_T0, SCARD_PROTOCOL_T1,
+        SCARD_RESET_CARD, SCARD_LEAVE_CARD,
+        SCARD_PCI_T0, SCARD_PCI_T1,
     )
 except ImportError:
     print("Fehler: Das Modul 'pyscard' fehlt.")
@@ -129,6 +132,19 @@ SCARD_WIEDERHOLEN = {
     0x80100067, 0x80100066, 0x80100068, 0x80100069,
 }
 
+# Übertragungsprotokolle in dieser Reihenfolge: zuerst T=0 (Standard bei
+# den meisten Lesern und Karten), bei Protokoll-Unverträglichkeit Rückfall
+# auf T=1. Jedes Protokoll braucht den passenden PCI-Wert bei SCardTransmit.
+PROTOKOLLE = (
+    ("T=0", SCARD_PROTOCOL_T0, SCARD_PCI_T0),
+    ("T=1", SCARD_PROTOCOL_T1, SCARD_PCI_T1),
+)
+
+# Nur bei diesen Codes bringt ein anderes Übertragungsprotokoll etwas
+# (Leser und Karte können sich auf T=0 nicht einigen). Bei allen anderen
+# Fehlern (keine Karte, kein Leser, ...) ist der T=1-Versuch sinnlos.
+PROTOKOLL_TAUSCH = {0x8010000F, 0x80100065}
+
 
 def scard_text(hr):
     """PC/SC-Fehlercode als Text (z. B. 'SCARD_E_NO_SMARTCARD')."""
@@ -174,7 +190,7 @@ def scard_hinweis(hr):
 
 
 class TachoCard:
-    """Verbindung zur Karte im Leser (Protokoll T=0)."""
+    """Verbindung zur Karte im Leser (Protokoll T=0, Rückfall auf T=1)."""
 
     VERSUCHE = 4
     PAUSE = 0.6                  # Sekunden zwischen zwei Verbindungsversuchen
@@ -182,6 +198,8 @@ class TachoCard:
     def __init__(self, reader_name):
         self.ctx = None
         self.hcard = None
+        self.protokoll = None    # "T=0" oder "T=1"
+        self.pci = None          # passender PCI-Wert für SCardTransmit
         hr, self.ctx = SCardEstablishContext(SCARD_SCOPE_USER)
         if hr != 0:
             self.ctx = None
@@ -189,33 +207,43 @@ class TachoCard:
                 "Smartcard-Dienst nicht erreichbar: %s\n%s"
                 % (scard_text(hr), scard_hinweis(hr)))
 
-        hr = self._verbinden(reader_name)
-        if hr != 0:
+        # Erst T=0 versuchen; kann sich die Karte darauf nicht einigen
+        # (z. B. reiner T=1-Leser), mit T=1 erneut versuchen.
+        letzter = None
+        proto = SCARD_PROTOCOL_T0
+        for name, proto, pci in PROTOKOLLE:
+            letzter = self._verbinden(reader_name, proto)
+            if letzter == 0:
+                self.protokoll = name
+                self.pci = pci
+                break
+            if (letzter & 0xFFFFFFFF) not in PROTOKOLL_TAUSCH:
+                break
+        if self.hcard is None:
             self._trennen(SCARD_LEAVE_CARD)
             raise CardError(
                 "Keine Karte im Leser '%s' gefunden.\n%s\n%s"
-                % (reader_name, scard_text(hr), scard_hinweis(hr)))
+                % (reader_name, scard_text(letzter),
+                   scard_hinweis(letzter)))
         self.reader = reader_name
 
         # Karte zuruecksetzen: Nach einem Auslesen bleibt sie in der zuletzt
         # gewaehlten Anwendung (Gen-1/Gen-2). Ohne Reset schlaegt das naechste
         # Auslesen bei EF.ICC/EF.IC fehl, solange die Karte stecken bleibt.
         hr, _ = SCardReconnect(
-            self.hcard, SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0,
-            SCARD_RESET_CARD)
+            self.hcard, SCARD_SHARE_SHARED, proto, SCARD_RESET_CARD)
         if hr != 0:
             self._trennen(SCARD_LEAVE_CARD)
             raise CardError(
                 "Karte konnte nicht zurueckgesetzt werden: %s\n%s"
                 % (scard_text(hr), scard_hinweis(hr)))
 
-    def _verbinden(self, reader_name):
+    def _verbinden(self, reader_name, protocol):
         """SCardConnect mit kurzen Wiederholungen für träge Leser."""
         letzter = None
         for versuch in range(self.VERSUCHE):
             hr, hcard, _ = SCardConnect(
-                self.ctx, reader_name, SCARD_SHARE_SHARED,
-                SCARD_PROTOCOL_T0)
+                self.ctx, reader_name, SCARD_SHARE_SHARED, protocol)
             if hr == 0:
                 self.hcard = hcard
                 return 0
@@ -241,14 +269,14 @@ class TachoCard:
 
     def _tx(self, apdu):
         """APDU senden; GET RESPONSE (61xx) automatisch abarbeiten."""
-        hr, resp = SCardTransmit(self.hcard, SCARD_PCI_T0, list(apdu))
+        hr, resp = SCardTransmit(self.hcard, self.pci, list(apdu))
         if hr != 0:
             raise CardError("Übertragungsfehler zur Karte (0x%08X)." % hr)
         data, sw1, sw2 = list(resp[:-2]), resp[-2], resp[-1]
         while sw1 == 0x61:
             hr, resp = SCardTransmit(
-                self.hcard, SCARD_PCI_T0, [0x00, 0xC0, 0x00, 0x00,
-                                           sw2 if sw2 else 0xFF])
+                self.hcard, self.pci, [0x00, 0xC0, 0x00, 0x00,
+                                       sw2 if sw2 else 0xFF])
             if hr != 0:
                 raise CardError("GET RESPONSE fehlgeschlagen (0x%08X)." % hr)
             data += list(resp[:-2])
@@ -343,6 +371,14 @@ class TachoCard:
 # (Datei-ID, Name, Signatur erzeugen?)
 EF_ICC = (0x0002, "EF.ICC – Chip-Identifikation", False)
 EF_IC = (0x0005, "EF.IC – Chip-Seriennummer", False)
+
+
+def leser_liste():
+    """Namen aller angeschlossenen Kartenleser (für die Leser-Auswahl)."""
+    try:
+        return [str(r) for r in readers()]
+    except Exception:
+        return []
 
 
 def oeffne_karte(reader_name=None):
@@ -738,7 +774,8 @@ def main():
     except CardError as e:
         print("Fehler: %s" % e)
         return 1
-    print("Kartenleser: %s" % card.reader)
+    print("Kartenleser: %s (Protokoll %s)"
+          % (card.reader, card.protokoll or "?"))
 
     try:
         blocks, meta = download(card)

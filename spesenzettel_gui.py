@@ -56,6 +56,8 @@ class App(tk.Tk):
         self._update_url = spesen_lib.RELEASES_SEITE
         self.ddd_ordner_var = tk.StringVar()  # Speicherorte (Einstellungen)
         self.pdf_ordner_var = tk.StringVar()
+        self.leser_var = tk.StringVar()        # Kartenleser-Auswahl
+        self.leser_hinweis_var = tk.StringVar()
         self._oberflaeche()
         stil.hand_cursor(self)
         self.info = None                      # Ergebnis von spesen_lib.lade_ddd
@@ -443,9 +445,9 @@ class App(tk.Tk):
     # ------------------------------------------------------- Einstellungen
 
     def _einstellungen_seite(self, rahmen):
-        """Eigener Reiter: Update-Prüfung und Speicherorte."""
+        """Eigener Reiter: Update-Prüfung, Kartenleser und Speicherorte."""
         rahmen.columnconfigure(0, weight=1)
-        rahmen.rowconfigure(4, weight=1)
+        rahmen.rowconfigure(5, weight=1)
 
         ttk.Label(rahmen, text="Einstellungen",
                   foreground=stil.NAVY,
@@ -453,8 +455,8 @@ class App(tk.Tk):
             row=0, column=0, sticky="w", padx=16, pady=(16, 2))
         ttk.Label(rahmen, foreground=stil.GEDAEMPFT,
                   font=stil.schrift(stil.PT_TEXT),
-                  text="Updates prüfen und festlegen, wo Karten-Downloads "
-                       "und Spesenzettel gespeichert werden.").grid(
+                  text="Updates prüfen, Kartenleser wählen und festlegen, wo "
+                       "Karten-Downloads und Spesenzettel gespeichert werden.").grid(
             row=1, column=0, sticky="w", padx=16, pady=(0, 10))
 
         # --- Updates ------------------------------------------------------
@@ -462,11 +464,30 @@ class App(tk.Tk):
         updates_karte.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 8))
         self._update_leiste(updates_karte.innen)
 
+        # --- Kartenleser --------------------------------------------------
+        # Bei mehreren angeschlossenen Lesern kann ein bestimmter gewählt
+        # werden; „automatisch“ nimmt den ersten Leser mit Karte.
+        leser_karte = stil.Karte(rahmen, titel="Kartenleser", padding=(16, 12))
+        leser_karte.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 8))
+        leser = leser_karte.innen
+        leser.columnconfigure(1, weight=1)
+        ttk.Label(leser, text="Verwenden:").grid(row=0, column=0, sticky="w")
+        self.leser_combo = ttk.Combobox(leser, textvariable=self.leser_var,
+                                        state="readonly", width=52)
+        self.leser_combo.grid(row=0, column=1, sticky="w", padx=(6, 8))
+        self.leser_combo.bind("<<ComboboxSelected>>", self.leser_gewaehlt)
+        ttk.Button(leser, text="Suchen", command=self._leser_aktualisieren).grid(
+            row=0, column=2)
+        ttk.Label(leser, textvariable=self.leser_hinweis_var,
+                  foreground=stil.GEDAEMPFT,
+                  font=stil.schrift(stil.PT_KLEIN), wraplength=760).grid(
+            row=1, column=0, columnspan=3, sticky="w", pady=(5, 0))
+
         # --- Speicherorte -------------------------------------------------
         # Standard bleibt Dokumente\CardMaster LS; .ddd-Downloads und
         # Spesenzettel-PDFs koennen getrennt umgestellt werden.
         orte_karte = stil.Karte(rahmen, titel="Speicherorte", padding=(16, 12))
-        orte_karte.grid(row=3, column=0, sticky="new", padx=16)
+        orte_karte.grid(row=4, column=0, sticky="new", padx=16)
         orte = orte_karte.innen
         orte.columnconfigure(1, weight=1)
         for zeile, beschriftung, variable, schluessel in (
@@ -491,6 +512,98 @@ class App(tk.Tk):
                   ).grid(row=2, column=0, columnspan=4, sticky="w",
                          pady=(5, 0))
         self._ordner_anzeigen()
+        self._leser_aktualisieren()
+
+    # --------------------------------------------------------- Kartenleser
+
+    def _leser_aktualisieren(self):
+        """Angeschlossene Kartenleser suchen und in die Auswahl übernehmen."""
+        if fahrerkarte is None:
+            self.leser_combo["values"] = ["(automatisch)"]
+            self.leser_var.set("(automatisch)")
+            self.leser_hinweis_var.set("pyscard fehlt – Kartenlesen nicht "
+                                       "möglich.")
+            return
+        gefunden = fahrerkarte.leser_liste()
+        self.leser_combo["values"] = ["(automatisch)"] + gefunden
+        gemerkt = spesen_lib.kartenleser_name()
+        if gemerkt and gemerkt in gefunden:
+            self.leser_var.set(gemerkt)
+        else:
+            self.leser_var.set("(automatisch)")
+        if gefunden:
+            self.leser_hinweis_var.set(
+                "%d Kartenleser gefunden. „automatisch“ nimmt den ersten "
+                "Leser mit eingelegter Karte." % len(gefunden))
+        else:
+            self.leser_hinweis_var.set(
+                "Kein Kartenleser gefunden. USB-Leser anschließen und erneut "
+                "auf „Suchen“ klicken.")
+
+    def leser_gewaehlt(self, _ereignis=None):
+        """Gewählten Kartenleser dauerhaft merken."""
+        wahl = self.leser_var.get()
+        name = "" if wahl in ("", "(automatisch)") else wahl
+        try:
+            spesen_lib.setze_kartenleser(name)
+        except OSError as e:
+            self.log("Leser-Auswahl nicht gespeichert: %s" % e)
+            return
+        self.log("Kartenleser: %s" % (name or "automatisch"))
+
+    def _leser_waehlen(self, leser):
+        """Auswahldialog, wenn mehrere Leser angeschlossen sind.
+
+        Rückgabe: Name des gewählten Lesers oder None bei Abbruch.
+        """
+        dialog = tk.Toplevel(self)
+        dialog.title("Kartenleser wählen")
+        dialog.transient(self)
+        dialog.resizable(False, False)
+        stil.anwenden(dialog)
+        rahmen = ttk.Frame(dialog, padding=16)
+        rahmen.pack(fill="both", expand=True)
+        ttk.Label(rahmen, wraplength=420,
+                  text="Mehrere Kartenleser gefunden. Bitte den Leser mit "
+                       "der eingelegten Fahrerkarte wählen:").pack(anchor="w")
+        var = tk.StringVar(value=leser[0])
+        auswahl = ttk.Combobox(rahmen, textvariable=var, values=leser,
+                               state="readonly", width=52)
+        auswahl.pack(fill="x", pady=(10, 12))
+        merken_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(rahmen, text="Auswahl merken", variable=merken_var,
+                       background=stil.WEISS, activebackground=stil.WEISS,
+                       foreground=stil.TEXT, selectcolor=stil.WEISS,
+                       borderwidth=0, highlightthickness=0,
+                       font=stil.schrift(stil.PT_KLEIN)).pack(anchor="w")
+        ergebnis = {"wahl": None}
+
+        def ok():
+            ergebnis["wahl"] = var.get()
+            if merken_var.get():
+                try:
+                    spesen_lib.setze_kartenleser(ergebnis["wahl"])
+                except OSError:
+                    pass
+            dialog.destroy()
+
+        knopf = ttk.Frame(rahmen)
+        knopf.pack(anchor="e", pady=(14, 0))
+        ttk.Button(knopf, text="Abbrechen",
+                   command=dialog.destroy).pack(side="right", padx=(8, 0))
+        ttk.Button(knopf, text="Weiter", style="Primaer.TButton",
+                   command=ok).pack(side="right")
+        dialog.bind("<Return>", lambda _e: ok())
+        dialog.bind("<Escape>", lambda _e: dialog.destroy())
+        dialog.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - dialog.winfo_width()) // 2
+        y = (self.winfo_rooty()
+             + (self.winfo_height() - dialog.winfo_height()) // 3)
+        dialog.geometry("+%d+%d" % (max(0, x), max(0, y)))
+        auswahl.focus_set()
+        dialog.grab_set()
+        self.wait_window(dialog)
+        return ergebnis["wahl"]
 
     # ------------------------------------------------------------- Updates
 
@@ -844,21 +957,45 @@ class App(tk.Tk):
             self.log(text)
 
     def karte_auslesen(self):
+        """Kartenleser bestimmen und das Auslesen im Hintergrund starten."""
+        if fahrerkarte is None:
+            messagebox.showerror(
+                "Karte auslesen",
+                "Das Modul 'pyscard' fehlt. Bitte einmalig installieren:\n"
+                "py -m pip install pyscard")
+            return
+        leser = fahrerkarte.leser_liste()
+        if not leser:
+            messagebox.showerror(
+                "Karte auslesen",
+                "Kein Kartenleser gefunden. Bitte den USB-Kartenleser "
+                "anschließen und die Fahrerkarte einstecken.")
+            return
+        if len(leser) == 1:
+            wahl = leser[0]
+        else:
+            gemerkt = spesen_lib.kartenleser_name()
+            if gemerkt in leser:
+                wahl = gemerkt
+            else:
+                wahl = self._leser_waehlen(leser)
+                if not wahl:
+                    return
         self._busy(True, "Karte wird ausgelesen — bitte warten …")
-        threading.Thread(target=self._karte_lesen, daemon=True).start()
+        threading.Thread(target=self._karte_lesen, args=(wahl,),
+                         daemon=True).start()
 
-    def _karte_lesen(self):
+    def _karte_lesen(self, leser=None):
         """Fahrerkarte im Hintergrund auslesen (blocking, eigener Thread)."""
         try:
-            from smartcard.System import readers
-            if not readers():
+            if not fahrerkarte.leser_liste():
                 raise RuntimeError(
                     "Kein Kartenleser gefunden. USB-Leser anschließen und "
                     "Karte einstecken.")
 
             protokoll = io.StringIO()
             with contextlib.redirect_stdout(protokoll):
-                karte = fahrerkarte.oeffne_karte()
+                karte = fahrerkarte.oeffne_karte(leser)
                 try:
                     bloecke, meta = fahrerkarte.download(karte)
                     # Gen-2-Anwendung (GNSS-Orte) mit auslesen; scheitert
@@ -869,7 +1006,8 @@ class App(tk.Tk):
                 ident = fahrerkarte.parse_identification(meta["ident_raw"])
                 ddd = fahrerkarte.build_ddd(bloecke)
 
-            self.log("Kartenleser: %s" % karte.reader)
+            self.log("Kartenleser: %s (%s)"
+                     % (karte.reader, karte.protokoll or "?"))
             for zeile in protokoll.getvalue().splitlines():
                 if zeile.strip():
                     self.log(zeile.strip())

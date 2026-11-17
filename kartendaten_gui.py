@@ -86,6 +86,84 @@ def _schraffiere_bogen(c, cx, cy, r_aussen, ring, start, extent,
                           fill=farbe, width=breite)
 
 
+# --------------------------------------------------------- Zeilen des Tages
+# Eine Zeile je Tätigkeit, links das offizielle Piktogramm nach
+# VO (EU) 2016/799, Anhang I C, Anlage 3 (VDO/DTCO): Lenkrad, gekreuzte
+# Hämmer, Quadrat mit Diagonale, Bett, Fragezeichen. Reihenfolge wie im
+# VDO-Menü und auf der Vorlage: Lenkzeit – Arbeit – Bereitschaft – Ruhe.
+# Der dritte Wert ist die Aktivitätsart im Minutenprofil
+# (0 Ruhe, 1 Bereitschaft, 2 Arbeit, 3 Fahrt, -1 unbekannt).
+ZEIT_ZEILEN = (
+    ("Fahrt", "Fahrtzeit", 3),
+    ("Arbeit", "Arbeitszeit", 2),
+    ("Bereitschaft", "Bereitschaftszeit", 1),
+    ("Ruhe", "Ruhezeit", 0),
+    ("Unbekannt", "Unbekannt", kartendaten.UNBEKANNT),
+)
+
+
+def _dauer(minuten):
+    """Dauer in Minuten als '1h36min' bzw. '45min'."""
+    minuten = int(round(minuten))
+    h, m = divmod(minuten, 60)
+    if h and m:
+        return "%dh%02dmin" % (h, m)
+    if h:
+        return "%dh" % h
+    return "%dmin" % m
+
+
+def _symbol_lenkrad(c, cx, cy, r, farbe):
+    """Lenkrad – Tätigkeit „Fahrt“."""
+    c.create_oval(cx - r, cy - r, cx + r, cy + r, outline=farbe, width=2)
+    c.create_oval(cx - 2, cy - 2, cx + 2, cy + 2, fill=farbe, outline=farbe)
+    c.create_line(cx, cy, cx - r + 1, cy, fill=farbe, width=2)
+    c.create_line(cx, cy, cx + r - 1, cy, fill=farbe, width=2)
+    c.create_line(cx, cy, cx, cy + r - 1, fill=farbe, width=2)
+
+
+def _symbol_haemmer(c, cx, cy, r, farbe):
+    """Gekreuzte Hämmer – Tätigkeit „Arbeit“."""
+    c.create_line(cx - 0.9 * r, cy + 0.9 * r, cx + 0.5 * r, cy - 0.5 * r,
+                  fill=farbe, width=2)
+    c.create_line(cx + 0.9 * r, cy + 0.9 * r, cx - 0.5 * r, cy - 0.5 * r,
+                  fill=farbe, width=2)
+    c.create_line(cx + 0.25 * r, cy - r, cx + r, cy - 0.25 * r,
+                  fill=farbe, width=3)
+    c.create_line(cx - 0.25 * r, cy - r, cx - r, cy - 0.25 * r,
+                  fill=farbe, width=3)
+
+
+def _symbol_bereitschaft(c, cx, cy, r, farbe):
+    """Quadrat mit Diagonale – Tätigkeit „Bereitschaft“."""
+    s = 0.85 * r
+    c.create_rectangle(cx - s, cy - s, cx + s, cy + s,
+                       outline=farbe, width=2)
+    c.create_line(cx - s, cy + s, cx + s, cy - s, fill=farbe, width=2)
+
+
+def _symbol_bett(c, cx, cy, r, farbe):
+    """Bett – Tätigkeit „Ruhe“."""
+    # Kopfende
+    c.create_line(cx - r, cy - 0.9 * r, cx - r, cy + 0.8 * r,
+                  fill=farbe, width=2)
+    # Liegefläche
+    c.create_line(cx - r, cy + 0.8 * r, cx + r, cy + 0.8 * r,
+                  fill=farbe, width=2)
+    # Fußende
+    c.create_line(cx + r, cy + 0.8 * r, cx + r, cy + 0.1 * r,
+                  fill=farbe, width=2)
+    # Kissen
+    c.create_rectangle(cx - 0.75 * r, cy - 0.5 * r,
+                       cx - 0.1 * r, cy + 0.1 * r,
+                       fill=farbe, outline=farbe)
+
+
+def _symbol_frage(c, cx, cy, farbe, schrift):
+    """Fragezeichen – noch nicht ausgelesene Zeit („Unbekannt“)."""
+    c.create_text(cx, cy, text="?", fill=farbe, font=schrift)
+
+
 class KartendatenTab(ttk.Frame):
     def __init__(self, master):
         super().__init__(master, padding=(16, 14))
@@ -94,6 +172,7 @@ class KartendatenTab(ttk.Frame):
         self._auswahl = None
         self._info = None
         self._hover_id = None
+        self._zeit_geo = None
 
         self.columnconfigure(0, weight=0)
         self.columnconfigure(1, weight=1)
@@ -168,7 +247,7 @@ class KartendatenTab(ttk.Frame):
                   font=stil.schrift(stil.PT_TEXT)).grid(row=1, column=0, sticky="w",
                                              pady=(0, 6))
 
-        self.zeit_canvas = tk.Canvas(rechts, height=160, highlightthickness=0,
+        self.zeit_canvas = tk.Canvas(rechts, height=172, highlightthickness=0,
                                      background=stil.WEISS)
         self.zeit_canvas.grid(row=2, column=0, sticky="ew")
         self.zeit_canvas.bind("<Configure>", lambda e: self._zeichne_zeit())
@@ -361,48 +440,97 @@ class KartendatenTab(ttk.Frame):
         c = self.zeit_canvas
         c.delete("all")
         self._hover_id = None
+        self._zeit_geo = None
         if self._auswahl is None:
             return
 
         s = self._auswahl["summen"]
         profil = self._auswahl["profil"]
-        breite = max(260, c.winfo_width() - 28)
+
+        # Aufbau wie auf der Vorlage: Zeitangaben oben, darunter eine Zeile
+        # je Tätigkeit. Links steht in jeder Zeile ein Symbol, daneben der
+        # Name. Symbolspalte und Raster überschneiden sich nicht.
         links = 14
-        rechts = links + breite
-        titel_y, y0, hoehe = 13, 32, 48
+        titel_y = 13
+        kopf_y = 30                 # Zeitangaben über dem Raster
+        y0 = 46                     # Oberkante des Rasters
+        zeilen_hoehe = 21
+        anzahl = len(ZEIT_ZEILEN)
+        y_ende = y0 + zeilen_hoehe * anzahl
+
+        schrift_name = tkfont.Font(font=stil.schrift(stil.PT_KLEIN))
+        symbol_breite = 22
+        name_breite = max(schrift_name.measure(n) for n, _z, _a in ZEIT_ZEILEN)
+        gitter_links = links + symbol_breite + 6 + name_breite + 12
+        breite = max(200, c.winfo_width() - gitter_links - 24)
+        rechts = gitter_links + breite
 
         # Überschrift der Grafik
         c.create_text(links, titel_y, anchor="w", text="Tagesverlauf",
                       font=stil.schrift(stil.PT_KLEIN, True), fill=GRAPHIT)
 
-        # Hintergrundspur und Stundenraster
-        c.create_rectangle(links, y0, rechts, y0 + hoehe,
-                           fill="#F1F3F7", outline="")
+        # Hintergrund des Rasters
+        c.create_rectangle(gitter_links, y0, rechts, y_ende,
+                           fill="#F6F8FB", outline="")
+
+        # Halbstundenlinien (hell) und Stundenlinien (kräftiger)
+        for halb in range(1, 48, 2):
+            x = gitter_links + breite * halb / 48.0
+            c.create_line(x, y0, x, y_ende, fill="#EEF1F6")
         for stunde in range(0, 25):
-            x = links + breite * stunde / 24.0
+            x = gitter_links + breite * stunde / 24.0
             if 0 < stunde < 24:
-                c.create_line(x, y0, x, y0 + hoehe, fill="#E1E5ED")
+                c.create_line(x, y0, x, y_ende, fill="#E1E5ED")
             if stunde % 2 == 0:
-                c.create_line(x, y0 + hoehe, x, y0 + hoehe + 5,
-                              fill="#C9D0DC")
-                c.create_text(x, y0 + hoehe + 16, text="%02d" % stunde,
+                c.create_line(x, y0 - 4, x, y0, fill="#C9D0DC")
+                text = "24:00" if stunde == 24 else "%02d:00" % stunde
+                c.create_text(x, kopf_y, text=text,
                               font=stil.schrift(stil.PT_MINI),
                               fill=stil.GEDAEMPFT)
 
-        # Aktivitätsbalken: durchgehender 24-Stunden-Streifen mit feinen
-        # weißen Trennlinien zwischen den Abschnitten
-        for von, bis, art in self._laeufe(profil):
-            unbekannt = art < 0
-            farbe = UNBEKANNT if unbekannt else kartendaten.FARBEN[art]
-            x1 = links + breite * von / 1440.0
-            x2 = links + breite * bis / 1440.0
-            c.create_rectangle(x1, y0, x2, y0 + hoehe, fill=farbe,
-                               outline=stil.WEISS, width=1)
-            if unbekannt and x2 - x1 > 3:
-                _schraffiere_rechteck(c, x1 + 1, y0 + 1,
-                                      x2 - 1, y0 + hoehe - 1)
+        # Zeilentrenner
+        for i in range(anzahl + 1):
+            y = y0 + i * zeilen_hoehe
+            c.create_line(gitter_links, y, rechts, y, fill="#E4E8F0")
 
-        # Verstöße als Markierung über dem Balken
+        # Balken je Tätigkeit in der eigenen Zeile
+        for i, (_name, _zeit, art) in enumerate(ZEIT_ZEILEN):
+            farbe = UNBEKANNT if art < 0 else kartendaten.FARBEN[art]
+            ry0 = y0 + i * zeilen_hoehe + 3
+            ry1 = y0 + (i + 1) * zeilen_hoehe - 3
+            for von, bis, lauf_art in self._laeufe(profil):
+                if lauf_art != art:
+                    continue
+                x1 = gitter_links + breite * von / 1440.0
+                x2 = gitter_links + breite * bis / 1440.0
+                if x2 - x1 < 0.6:
+                    continue
+                c.create_rectangle(x1, ry0, x2, ry1, fill=farbe,
+                                   outline=stil.WEISS, width=1)
+                if art < 0 and x2 - x1 > 4:
+                    _schraffiere_rechteck(c, x1 + 1, ry0 + 1,
+                                          x2 - 1, ry1 - 1, abstand=4)
+
+        # Symbole und Namen in der linken Spalte
+        for i, (name, _zeit, art) in enumerate(ZEIT_ZEILEN):
+            cy = y0 + i * zeilen_hoehe + zeilen_hoehe / 2.0
+            cx = links + symbol_breite / 2.0
+            if art == 3:
+                _symbol_lenkrad(c, cx, cy, 6, GRAPHIT)
+            elif art == 2:
+                _symbol_haemmer(c, cx, cy, 6, GRAPHIT)
+            elif art == 1:
+                _symbol_bereitschaft(c, cx, cy, 6, GRAPHIT)
+            elif art == 0:
+                _symbol_bett(c, cx, cy, 6, GRAPHIT)
+            else:
+                _symbol_frage(c, cx, cy, GRAPHIT,
+                              stil.schrift(stil.PT_KLEIN, True))
+            c.create_text(links + symbol_breite + 6, cy, anchor="w",
+                          text=name, font=stil.schrift(stil.PT_KLEIN),
+                          fill=stil.GEDAEMPFT)
+
+        # Verstöße als rote Dreiecke über dem Raster
         for m in self._auswahl["verstoesse"]:
             if not m.get("zeit"):
                 continue
@@ -411,71 +539,91 @@ class KartendatenTab(ttk.Frame):
                 minute = int(h) * 60 + int(mi)
             except ValueError:
                 continue
-            x = links + breite * minute / 1440.0
-            c.create_polygon(x, y0 - 7, x - 5, y0 - 1, x + 5, y0 - 1,
+            x = gitter_links + breite * minute / 1440.0
+            c.create_polygon(x, y0 - 1, x - 4, y0 - 8, x + 4, y0 - 8,
                              fill=stil.ROT, outline=stil.WEISS, width=1)
 
-        c.create_rectangle(links, y0, rechts, y0 + hoehe, outline=stil.RAND)
-
-        # Legende mit den Zeitanteilen des Tages
-        eintraege = [
-            (s["ruhe"], kartendaten.FARBEN[0], "Ruhe"),
-            (s["bereit"], kartendaten.FARBEN[1], "Bereitschaft"),
-            (s["arbeit"], kartendaten.FARBEN[2], "Arbeit"),
-            (s["lenk"], kartendaten.FARBEN[3], "Fahrt"),
-        ]
-        if s["unbekannt"]:
-            eintraege.append((s["unbekannt"], UNBEKANNT, "Unbekannt"))
-        schrift = tkfont.Font(font=stil.schrift(stil.PT_KLEIN))
-        x, y = links, y0 + hoehe + 34
-        for wert, farbe, name in eintraege:
-            text = "%s %s" % (name, kartendaten.hmm(wert))
-            breite_text = schrift.measure(text) + 24
-            if x > links and x + breite_text > rechts:
-                x, y = links, y + 19
-            c.create_rectangle(x, y - 5, x + 10, y + 5,
-                               fill=farbe, outline=stil.RAND)
-            if name == "Unbekannt":
-                _schraffiere_rechteck(c, x, y - 5, x + 10, y + 5, abstand=4)
-            c.create_text(x + 16, y, anchor="w", text=text,
-                          font=stil.schrift(stil.PT_KLEIN), fill=stil.TEXT)
-            x += breite_text + 14
+        c.create_rectangle(gitter_links, y0, rechts, y_ende, outline=stil.RAND)
 
         if s["unbekannt"]:
-            c.create_text(rechts, y + 19, anchor="e",
+            c.create_text(rechts, y_ende + 12, anchor="e",
                           text="* nach dem letzten Auslesen unbekannt",
                           font=stil.schrift(stil.PT_MINI), fill=stil.GRAU)
 
+        # Geometrie für die Hover-Abfrage merken
+        self._zeit_geo = {
+            "links": gitter_links, "breite": breite, "y0": y0,
+            "zeilen_hoehe": zeilen_hoehe, "anzahl": anzahl,
+        }
+
     def _hover(self, event):
         c = self.zeit_canvas
-        if self._auswahl is None:
+        geo = self._zeit_geo
+        if self._auswahl is None or geo is None:
             return
-        breite = max(260, c.winfo_width() - 28)
-        links = 14
+        links, breite = geo["links"], geo["breite"]
+        y0, zh, anzahl = geo["y0"], geo["zeilen_hoehe"], geo["anzahl"]
+
         x = event.x - links
-        if x < 0 or x > breite:
+        y = event.y - y0
+        reihe = int(y // zh) if y >= 0 else -1
+        if x < 0 or x > breite or reihe < 0 or reihe >= anzahl:
             self._hover_loeschen()
             return
+
+        wert = ZEIT_ZEILEN[reihe][2]
         profil = self._auswahl["profil"]
         minute = min(1439, max(0, int(x / breite * 1440)))
-        art = profil[minute]
+        if profil[minute] != wert:
+            self._hover_loeschen()
+            return
+
         start = minute
-        while start > 0 and profil[start - 1] == art:
+        while start > 0 and profil[start - 1] == wert:
             start -= 1
         ende = minute + 1
-        while ende < 1440 and profil[ende] == art:
+        while ende < 1440 and profil[ende] == wert:
             ende += 1
-        name = "Unbekannt" if art < 0 else kartendaten.ARTEN[art]
-        ende_text = "24:00" if ende >= 1440 else kartendaten.uhr(ende)
-        text = "%s–%s  %s (%s)" % (
-            kartendaten.uhr(start), ende_text, name,
-            kartendaten.hmm(ende - start))
+
         c.delete("hover")
+
+        # Führungslinie über alle Zeilen und hervorgehobener Balken
         xp = links + breite * minute / 1440.0
-        c.create_line(xp, 32, xp, 80, fill=GRAPHIT,
+        c.create_line(xp, y0, xp, y0 + zh * anzahl, fill=GRAPHIT,
                       dash=(2, 2), tags="hover")
-        c.create_text(c.winfo_width() - 8, 8, anchor="ne", text=text,
+        rx1 = links + breite * start / 1440.0
+        rx2 = links + breite * ende / 1440.0
+        ry0 = y0 + reihe * zh + 3
+        ry1 = y0 + (reihe + 1) * zh - 3
+        c.create_rectangle(rx1, ry0, rx2, ry1, outline=GRAPHIT, width=2,
+                           tags="hover")
+
+        # Infofeld zum Block, z. B. „Fahrtzeit 1h36min“
+        _name, bezeichnung, _art = ZEIT_ZEILEN[reihe]
+        zeile1 = "%s %s" % (bezeichnung, _dauer(ende - start))
+        ende_text = "24:00" if ende >= 1440 else kartendaten.uhr(ende)
+        zeile2 = "%s–%s Uhr" % (kartendaten.uhr(start), ende_text)
+
+        schrift_fett = tkfont.Font(font=stil.schrift(stil.PT_KLEIN, True))
+        schrift_kl = tkfont.Font(font=stil.schrift(stil.PT_MINI))
+        bw = max(schrift_fett.measure(zeile1),
+                 schrift_kl.measure(zeile2)) + 16
+        bh = 32
+        tx = event.x + 14
+        if tx + bw > c.winfo_width() - 4:
+            tx = event.x - bw - 14
+        tx = max(4, tx)
+        ty = event.y + 14
+        if ty + bh > c.winfo_height() - 4:
+            ty = event.y - bh - 14
+        ty = max(4, ty)
+        c.create_rectangle(tx, ty, tx + bw, ty + bh, fill=stil.WEISS,
+                           outline=GRAPHIT, width=1, tags="hover")
+        c.create_text(tx + 8, ty + 7, anchor="nw", text=zeile1,
                       font=stil.schrift(stil.PT_KLEIN, True), fill=GRAPHIT,
+                      tags="hover")
+        c.create_text(tx + 8, ty + 21, anchor="nw", text=zeile2,
+                      font=stil.schrift(stil.PT_MINI), fill=stil.GEDAEMPFT,
                       tags="hover")
 
     def _hover_loeschen(self):
