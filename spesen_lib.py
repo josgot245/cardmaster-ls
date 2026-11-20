@@ -172,7 +172,7 @@ EINSTELLUNGEN_DATEI = DATA_DIR / "einstellungen.json"  # Speicherorte
 # GitHub-Repository, in dem die Releases samt Setup liegen. Die Startseite
 # vergleicht diese Version mit dem neuesten Release und weist auf eine
 # neuere Fassung hin.
-VERSION = "1.4.9"
+VERSION = "1.4.10"
 GITHUB_REPO = "josgot245/cardmaster-ls"
 RELEASES_SEITE = "https://github.com/%s/releases" % GITHUB_REPO
 

@@ -20,11 +20,11 @@ VSVersionInfo(
         [
           StringStruct('CompanyName', 'Standardprojekt'),
           StringStruct('FileDescription', 'CardMaster LS - Spesenzettel aus der Fahrerkarte'),
-          StringStruct('FileVersion', '1.4.9'),
+          StringStruct('FileVersion', '1.4.10'),
           StringStruct('InternalName', 'CardMaster LS'),
           StringStruct('OriginalFilename', 'CardMaster LS.exe'),
           StringStruct('ProductName', 'CardMaster LS'),
-          StringStruct('ProductVersion', '1.4.9'),
+          StringStruct('ProductVersion', '1.4.10'),
         ],
       ),
     ]),

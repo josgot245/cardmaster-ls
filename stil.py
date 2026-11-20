@@ -16,6 +16,8 @@ Fließtext und Hinweise überall gleich groß sind.
 Alle Fenster rufen beim Start :func:`anwenden` auf. Die Stile gelten
 danach für alle ttk-Widgets der Anwendung.
 """
+import ctypes
+import re
 import sys
 import tkinter as tk
 from tkinter import font as tkfont
@@ -372,6 +374,82 @@ def skalierung_setzen(fenster):
         fenster.tk.call("tk", "scaling", dpi / 72.0)
     except tk.TclError:
         pass
+
+
+# -------------------------------------------------- Fenster auf dem Bildschirm
+# Die Arbeitsfläche ist der Bildschirm ohne Taskleiste. Alle Fenster werden
+# daran ausgerichtet, damit Dialoge auch bei vielen Einträgen nicht über
+# den unteren oder rechten Rand hinauswachsen.
+
+class _ARBEITSFLAECHE(ctypes.Structure):
+    _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+
+def arbeitsflaeche(fenster=None):
+    """Nutzbare Bildschirmfläche als (x, y, breite, höhe)."""
+    if sys.platform == "win32":
+        try:
+            flaeche = _ARBEITSFLAECHE()
+            if ctypes.windll.user32.SystemParametersInfoW(
+                    0x0030, 0, ctypes.byref(flaeche), 0):
+                return (flaeche.left, flaeche.top,
+                        flaeche.right - flaeche.left,
+                        flaeche.bottom - flaeche.top)
+        except (AttributeError, OSError):
+            pass
+    if fenster is not None:
+        try:
+            return (0, 0, fenster.winfo_screenwidth(),
+                    fenster.winfo_screenheight())
+        except tk.TclError:
+            pass
+    return (0, 0, 1920, 1080)
+
+
+def fenster_einpassen(fenster, breite, hoehe, parent=None, rand=20):
+    """Fenster mit Wunschgröße zentrieren und auf die Arbeitsfläche begrenzen.
+
+    ``parent`` gibt an, relativ zu welchem Fenster zentriert wird (sonst
+    zum Bildschirm). Die tatsächliche Größe wird so begrenzt, dass das
+    Fenster vollständig sichtbar bleibt.
+    """
+    ax, ay, aw, ah = arbeitsflaeche(fenster)
+    breite = max(min(280, aw - 2 * rand),
+                 min(int(breite), aw - 2 * rand))
+    hoehe = max(min(180, ah - 2 * rand),
+                min(int(hoehe), ah - 2 * rand))
+    px = py = pw = ph = None
+    if parent is not None:
+        try:
+            px, py = parent.winfo_rootx(), parent.winfo_rooty()
+            pw, ph = parent.winfo_width(), parent.winfo_height()
+        except tk.TclError:
+            pass
+    if px is not None and pw > 1:
+        x = px + (pw - breite) // 2
+        y = py + (ph - hoehe) // 3
+    else:
+        x = ax + (aw - breite) // 2
+        y = ay + (ah - hoehe) // 2
+    x = max(ax, min(x, ax + aw - breite))
+    y = max(ay, min(y, ay + ah - hoehe))
+    fenster.geometry("%dx%d+%d+%d" % (breite, hoehe, x, y))
+
+
+def geometry_einpassen(text, fenster=None, rand=8):
+    """Gespeicherte Geometry an die aktuelle Arbeitsfläche anpassen."""
+    treffer = re.match(r"(\d+)x(\d+)([+-]\d+)([+-]\d+)", str(text or ""))
+    if not treffer:
+        return ""
+    ax, ay, aw, ah = arbeitsflaeche(fenster)
+    breite = max(min(480, aw - 2 * rand),
+                 min(int(treffer.group(1)), aw - 2 * rand))
+    hoehe = max(min(360, ah - 2 * rand),
+                min(int(treffer.group(2)), ah - 2 * rand))
+    x = max(ax, min(int(treffer.group(3)), ax + aw - breite))
+    y = max(ay, min(int(treffer.group(4)), ay + ah - hoehe))
+    return "%dx%d%+d%+d" % (breite, hoehe, x, y)
 
 
 def hand_cursor(fenster):

@@ -48,7 +48,9 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("CardMaster LS – Fahrerkarte")
-        self.minsize(1080, 720)
+        ax, ay, aw, ah = stil.arbeitsflaeche(self)
+        self.minsize(min(1080, max(640, aw - 40)),
+                     min(720, max(460, ah - 40)))
         stil.anwenden(self)
         stil.skalierung_setzen(self)
         self._fenster_icon()
@@ -74,22 +76,29 @@ class App(tk.Tk):
             self.after(800, self.update_suchen)
 
     def _fenster_platzieren(self):
-        """Letzte Fenstergröße/-position wiederherstellen, sonst mittig."""
+        """Letzte Fenstergröße/-position wiederherstellen, sonst mittig.
+
+        Gespeicherte Geometrien werden an die aktuelle Arbeitsfläche
+        angepasst (z. B. nach Wechsel auf einen kleineren Bildschirm).
+        """
         gespeichert = (spesen_lib.lade_einstellungen().get("fenster")
                        or {}).get("geometry")
         if gespeichert:
-            try:
-                self.geometry(gespeichert)
-                return
-            except tk.TclError:
-                pass
-        breite, hoehe = 1180, 800
+            angepasst = stil.geometry_einpassen(gespeichert, self)
+            if angepasst:
+                try:
+                    self.geometry(angepasst)
+                    return
+                except tk.TclError:
+                    pass
+        ax, ay, aw, ah = stil.arbeitsflaeche(self)
+        breite = max(min(640, aw - 20), min(1180, aw - 40))
+        hoehe = max(min(460, ah - 20), min(800, ah - 40))
         self.update_idletasks()
-        sichtbar_b = self.winfo_screenwidth()
-        sichtbar_h = self.winfo_screenheight()
-        x = max(0, (sichtbar_b - breite) // 2)
-        y = max(0, (sichtbar_h - hoehe) // 3)
-        self.geometry("%dx%d+%d+%d" % (breite, hoehe, x, y))
+        self.geometry("%dx%d+%d+%d"
+                      % (breite, hoehe,
+                         ax + (aw - breite) // 2,
+                         ay + (ah - hoehe) // 3))
 
     def _beenden(self):
         """Fenstergröße/-position merken und schließen."""
@@ -596,10 +605,10 @@ class App(tk.Tk):
         dialog.bind("<Return>", lambda _e: ok())
         dialog.bind("<Escape>", lambda _e: dialog.destroy())
         dialog.update_idletasks()
-        x = self.winfo_rootx() + (self.winfo_width() - dialog.winfo_width()) // 2
-        y = (self.winfo_rooty()
-             + (self.winfo_height() - dialog.winfo_height()) // 3)
-        dialog.geometry("+%d+%d" % (max(0, x), max(0, y)))
+        stil.fenster_einpassen(
+            dialog, max(380, min(dialog.winfo_reqwidth(), 620)),
+            max(200, min(dialog.winfo_reqheight(), 400)),
+            parent=self, rand=20)
         auswahl.focus_set()
         dialog.grab_set()
         self.wait_window(dialog)
@@ -1302,29 +1311,77 @@ class App(tk.Tk):
         """Nahverkehr: je Nacht fragen, ob sie im Lkw verbracht wurde.
 
         Rückgabe: dict {(vortag, folgetag): True/False} oder None, wenn
-        die Rückfrage abgebrochen wurde.
+        die Rückfrage abgebrochen wurde. Die Liste ist scrollbar, damit der
+        Dialog auch bei vielen Nächten vollständig auf dem Bildschirm bleibt.
         """
         fenster = tk.Toplevel(self)
         fenster.title("Nächte außerhalb des Heimatorts")
         fenster.transient(self)
-        fenster.resizable(False, False)
+        fenster.resizable(True, True)
         fenster.grab_set()
-        rahmen = ttk.Frame(fenster, padding=14)
+        stil.anwenden(fenster)
+        stil.hand_cursor(fenster)
+
+        rahmen = ttk.Frame(fenster, padding=(16, 14))
         rahmen.pack(fill="both", expand=True)
+        rahmen.columnconfigure(0, weight=1)
+        rahmen.rowconfigure(1, weight=1)
+
         ttk.Label(rahmen, justify="left", wraplength=470,
                   text="Der Lkw stand in diesen Nächten nicht am Heimatort "
                        "(%s).\nBitte die Nächte abwählen, die zuhause "
-                       "verbracht wurden." % (self._heim_text or "?")).pack(
-            anchor="w", pady=(0, 8))
+                       "verbracht wurden." % (self._heim_text or "?")
+                  ).grid(row=0, column=0, sticky="w", pady=(0, 10))
+
+        # Nur die Nächte werden gescrollt; Kopfzeile und Knöpfe bleiben
+        # immer sichtbar.
+        listen_rahmen = ttk.Frame(rahmen)
+        listen_rahmen.grid(row=1, column=0, sticky="nsew")
+        listen_rahmen.columnconfigure(0, weight=1)
+        listen_rahmen.rowconfigure(0, weight=1)
+        canvas = tk.Canvas(listen_rahmen, highlightthickness=0,
+                           background=stil.WEISS)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        leiste = ttk.Scrollbar(listen_rahmen, orient="vertical",
+                               command=canvas.yview)
+        leiste.grid(row=0, column=1, sticky="ns")
+        canvas.configure(yscrollcommand=leiste.set)
+        inhalt = ttk.Frame(canvas)
+        fenster_id = canvas.create_window((0, 0), window=inhalt, anchor="nw")
+
+        def breite_anpassen(_e=None):
+            canvas.itemconfigure(fenster_id, width=canvas.winfo_width())
+
+        def bereich_anpassen(_e=None):
+            begrenzung = canvas.bbox("all")
+            if not begrenzung:
+                return
+            canvas.configure(scrollregion=begrenzung)
+            if begrenzung[3] > canvas.winfo_height() + 1:
+                leiste.grid()
+            else:
+                leiste.grid_remove()
+
+        def scrollen(e):
+            canvas.yview_scroll(-int(e.delta / 120), "units")
+
+        canvas.bind("<Configure>", breite_anpassen)
+        inhalt.bind("<Configure>", bereich_anpassen)
+        for widget in (canvas, inhalt):
+            widget.bind("<MouseWheel>", scrollen)
+
         eintraege = []
         for n in naechte:
             var = tk.BooleanVar(value=True)
-            ttk.Checkbutton(
-                rahmen,
+            knopf = ttk.Checkbutton(
+                inhalt,
                 text="Nacht %s → %s" % (spesen_lib._fmt(n["vor"]),
                                         spesen_lib._fmt(n["nach"])),
-                variable=var).pack(anchor="w")
+                variable=var)
+            knopf.pack(anchor="w", pady=1)
+            knopf.bind("<MouseWheel>", scrollen)
             eintraege.append((n, var))
+
         ergebnis = {"ok": False}
 
         def uebernehmen():
@@ -1332,11 +1389,25 @@ class App(tk.Tk):
             fenster.destroy()
 
         knoepfe = ttk.Frame(rahmen)
-        knoepfe.pack(fill="x", pady=(12, 0))
+        knoepfe.grid(row=2, column=0, sticky="e", pady=(12, 0))
         ttk.Button(knoepfe, text="Übernehmen", style="Akzent.TButton",
                    command=uebernehmen).pack(side="right")
         ttk.Button(knoepfe, text="Abbrechen",
                    command=fenster.destroy).pack(side="right", padx=(0, 8))
+        fenster.bind("<Escape>", lambda _e: fenster.destroy())
+
+        # Listenhöhe so bemessen, dass Kopf und Knöpfe immer mit draufpassen.
+        _ax, _ay, _aw, bildschirm_h = stil.arbeitsflaeche(self)
+        listen_hoehe = max(120, min(len(naechte) * 26 + 10,
+                                    bildschirm_h - 250))
+        canvas.configure(width=470, height=listen_hoehe)
+        fenster.update_idletasks()
+        stil.fenster_einpassen(
+            fenster, max(380, min(fenster.winfo_reqwidth(), 540)),
+            max(220, min(fenster.winfo_reqheight(), bildschirm_h - 40)),
+            parent=self, rand=20)
+        fenster.update_idletasks()
+        bereich_anpassen()
         fenster.wait_window()
         if not ergebnis["ok"]:
             return None
@@ -1504,15 +1575,19 @@ class App(tk.Tk):
             perioden = sorted({spesen_lib.abrechnungsperiode(t["tag"])
                                for t in self._basiszeilen()
                                if not t.get("leer")})
-            if len(perioden) > 1 and not messagebox.askyesno(
-                    "Ergänzungsblätter",
-                    "Der Abrechnungsstand wird ignoriert. Es würden %d "
-                    "Blätter erstellt:\n\n%s\n\nFortsetzen?"
-                    % (len(perioden), "\n".join(
-                        "• %s – %s" % (spesen_lib._fmt(von),
-                                      spesen_lib._fmt(bis))
-                        for von, bis in perioden))):
-                return
+            if len(perioden) > 1:
+                zeilen = ["• %s – %s" % (spesen_lib._fmt(von),
+                                         spesen_lib._fmt(bis))
+                          for von, bis in perioden[:10]]
+                if len(perioden) > len(zeilen):
+                    zeilen.append("… und %d weitere"
+                                  % (len(perioden) - len(zeilen)))
+                if not messagebox.askyesno(
+                        "Ergänzungsblätter",
+                        "Der Abrechnungsstand wird ignoriert. Es würden %d "
+                        "Blätter erstellt:\n\n%s\n\nFortsetzen?"
+                        % (len(perioden), "\n".join(zeilen))):
+                    return
         nacht_im_lkw = None
         if self._heim is not None and self.verkehr_var.get() == "nahverkehr":
             if self._nacht_im_lkw is None:
