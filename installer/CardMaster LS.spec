@@ -1,11 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
+import certifi
+
+# Aktuelles CA-Bundle mit ins Programm packen, damit die Ortssuche auch
+# auf Geraeten mit fehlenden/veralteten Windows-Root-Zertifikaten läuft.
+_CA_BUNDLE = (certifi.where(), 'certifi')
 
 
 a = Analysis(
     ['C:/Users/joshu/Documents/Standardprojekt/Fahrerkarte/spesenzettel_gui.py'],
     pathex=[],
     binaries=[],
-    datas=[('C:/Users/joshu/Documents/Standardprojekt/Fahrerkarte/Spesen.pdf', '.'), ('C:/Users/joshu/Documents/Standardprojekt/Fahrerkarte/installer/cardmaster.ico', '.'), ('C:/Users/joshu/Documents/Standardprojekt/Fahrerkarte/assets', 'assets'), ('C:/Users/joshu/Documents/Standardprojekt/Fahrerkarte/ANLEITUNG CardMaster LS.txt', '.')],
+    datas=[('C:/Users/joshu/Documents/Standardprojekt/Fahrerkarte/Spesen.pdf', '.'), ('C:/Users/joshu/Documents/Standardprojekt/Fahrerkarte/installer/cardmaster.ico', '.'), ('C:/Users/joshu/Documents/Standardprojekt/Fahrerkarte/assets', 'assets'), ('C:/Users/joshu/Documents/Standardprojekt/Fahrerkarte/ANLEITUNG CardMaster LS.txt', '.'), _CA_BUNDLE],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

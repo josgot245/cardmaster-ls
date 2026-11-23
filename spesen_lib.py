@@ -21,6 +21,7 @@ import json
 import math
 import re
 import shutil
+import ssl
 import sys
 import threading
 import time
@@ -28,6 +29,17 @@ import urllib.parse
 import urllib.request
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from pathlib import Path
+
+try:
+    import certifi                      # aktuelles CA-Bundle (Pfad im Bundle)
+    _CERTIFI_DATEI = certifi.where()
+    if not Path(_CERTIFI_DATEI).is_file():
+        # Im PyInstaller-Bundle liegt cacert.pem unter certifi/.
+        _basis = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+        _kandidat = _basis / "certifi" / "cacert.pem"
+        _CERTIFI_DATEI = str(_kandidat) if _kandidat.is_file() else None
+except (ImportError, AttributeError):
+    _CERTIFI_DATEI = None
 
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfbase.pdfmetrics import stringWidth
@@ -172,7 +184,7 @@ EINSTELLUNGEN_DATEI = DATA_DIR / "einstellungen.json"  # Speicherorte
 # GitHub-Repository, in dem die Releases samt Setup liegen. Die Startseite
 # vergleicht diese Version mit dem neuesten Release und weist auf eine
 # neuere Fassung hin.
-VERSION = "1.4.10"
+VERSION = "1.4.11"
 GITHUB_REPO = "josgot245/cardmaster-ls"
 RELEASES_SEITE = "https://github.com/%s/releases" % GITHUB_REPO
 
@@ -434,8 +446,39 @@ def abrechnungsperiode(tag):
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"
 NOMINATIM_SEARCH = "https://nominatim.openstreetmap.org/search"
+PHOTON_SEARCH = "https://photon.komoot.io/api/"   # zweiter Suchdienst
 
 _ORT_LOCK = threading.Lock()      # schuetzt Cache-Datei vor Parallelzugriff
+
+
+def _ssl_kontext():
+    """SSL-Kontext: Windows-Zertifikatsspeicher + aktuelles CA-Bundle.
+
+    Der Browser vertraut Zertifikate über den Windows-Speicher. Python
+    bringt im PyInstaller-Bundle keinen eigenen Speicher mit; hier werden
+    deshalb beide Quellen kombiniert. Das löst „unable to get local issuer
+    certificate“ auf Geräten mit FirmenProxy/fehlenden Root-Zertifikaten.
+    """
+    kontext = ssl.create_default_context()
+    try:
+        kontext.load_default_certs()      # Windows: CA/ROOT/STORE
+    except Exception:
+        pass
+    if _CERTIFI_DATEI:
+        try:
+            kontext.load_verify_locations(cafile=_CERTIFI_DATEI)
+        except Exception:
+            pass
+    return kontext
+
+
+def _url_json(url, timeout):
+    """JSON von einer HTTPS-URL holen (mit robustem SSL-Kontext)."""
+    anfrage = urllib.request.Request(url, headers={
+        "User-Agent": "CardMasterLS/1.1 (Spesenzettel aus der Fahrerkarte)"})
+    with urllib.request.urlopen(
+            anfrage, timeout=timeout, context=_ssl_kontext()) as antwort:
+        return json.loads(antwort.read().decode("utf-8"))
 
 
 def _lade_ortscache():
@@ -463,10 +506,7 @@ def _nominatim(lat, lon, timeout=8):
     url = NOMINATIM_URL + "?" + urllib.parse.urlencode({
         "format": "jsonv2", "lat": "%.5f" % lat, "lon": "%.5f" % lon,
         "zoom": 10, "accept-language": "de"})
-    anfrage = urllib.request.Request(url, headers={
-        "User-Agent": "CardMasterLS/1.1 (Spesenzettel aus der Fahrerkarte)"})
-    with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:
-        ergebnis = json.loads(antwort.read().decode("utf-8"))
+    ergebnis = _url_json(url, timeout)
     if not isinstance(ergebnis, dict):
         return None
     adresse = ergebnis.get("address")
@@ -490,10 +530,7 @@ def _nominatim_suche(text, timeout=12):
     url = NOMINATIM_SEARCH + "?" + urllib.parse.urlencode({
         "q": text, "format": "jsonv2", "limit": 1,
         "addressdetails": 1, "zoom": 10, "accept-language": "de"})
-    anfrage = urllib.request.Request(url, headers={
-        "User-Agent": "CardMasterLS/1.1 (Spesenzettel aus der Fahrerkarte)"})
-    with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:
-        ergebnis = json.loads(antwort.read().decode("utf-8"))
+    ergebnis = _url_json(url, timeout)
     if not isinstance(ergebnis, list) or not ergebnis:
         return None
     treffer = ergebnis[0]
@@ -502,6 +539,29 @@ def _nominatim_suche(text, timeout=12):
     try:
         return float(treffer["lat"]), float(treffer["lon"])
     except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _photon_suche(text, timeout=12):
+    """Zweiter Suchdienst (Photon/Komoot) als Fallback.
+
+    Liefert GeoJSON; die Koordinaten stehen als [lon, lat] in ``features``.
+    """
+    url = PHOTON_SEARCH + "?" + urllib.parse.urlencode({
+        "q": text, "limit": 1, "lang": "de"})
+    ergebnis = _url_json(url, timeout)
+    if not isinstance(ergebnis, dict):
+        return None
+    merkmale = ergebnis.get("features")
+    if not isinstance(merkmale, list) or not merkmale:
+        return None
+    geometrie = (merkmale[0] or {}).get("geometry") or {}
+    koordinaten = geometrie.get("coordinates")
+    if not isinstance(koordinaten, list) or len(koordinaten) < 2:
+        return None
+    try:
+        return float(koordinaten[1]), float(koordinaten[0])
+    except (TypeError, ValueError):
         return None
 
 
@@ -538,12 +598,29 @@ def heimatort_aufloesen(text, log=None):
                 return float(lat), float(lon)
             except (ValueError, TypeError):
                 return None
+        fehler = None
         try:
             treffer = _nominatim_suche(text)
         except Exception as e:
+            fehler = e
             if log:
-                log("Heimatort „%s“ nicht ermittelbar (%s)" % (text, e))
-            return None
+                log("Nominatim für „%s“ nicht erreichbar (%s) — "
+                    "zweiter Suchdienst wird versucht." % (text, e))
+            treffer = None
+        if treffer is None and fehler is not None:
+            # Nominatim hatte einen Netzwerk-/SSL-Fehler: zweiter Dienst.
+            try:
+                treffer = _photon_suche(text)
+                fehler = None
+            except Exception as e2:
+                fehler = e2
+                if log:
+                    log("Auch Photon für „%s“ nicht erreichbar (%s)"
+                        % (text, e2))
+        if fehler is not None:
+            # Kein Treffer, aber Netzwerkfehler -> nichts cachen, damit ein
+            # spaeterer Versuch (z. B. nach Proxy-Korrektur) wieder läuft.
+            raise fehler
         if treffer is None:
             cache[key] = ""
             _speichere_ortscache(cache)

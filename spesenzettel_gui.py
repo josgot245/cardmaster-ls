@@ -1474,7 +1474,14 @@ class App(tk.Tk):
 
     def _heim_fehler(self, text, meldung):
         self.btn_heim.state(["!disabled"])
-        self.heim_var.set("„%s“ nicht ermittelbar: %s" % (text, meldung))
+        niedrig = meldung.lower()
+        if ("certificate" in niedrig or "ssl" in niedrig
+                or "zertifikat" in niedrig):
+            self.heim_var.set(
+                "„%s“: Zertifikatsproblem — bitte Koordinaten eingeben "
+                "(z. B. 53.55, 8.58) oder die IT kontaktieren." % text)
+        else:
+            self.heim_var.set("„%s“ nicht ermittelbar: %s" % (text, meldung))
         self.log("FEHLER beim Prüfen des Heimatorts: %s" % meldung)
 
     def _tabelle_aktualisieren(self):
