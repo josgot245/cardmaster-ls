@@ -689,8 +689,15 @@ class App(tk.Tk):
                         self._update_url))
         elif fehler:
             if manuell:
-                self.update_var.set(
-                    "Update-Prüfung nicht möglich (%s)." % fehler)
+                niedrig = str(fehler).lower()
+                if ("certificate" in niedrig or "ssl" in niedrig
+                        or "zertifikat" in niedrig):
+                    self.update_var.set(
+                        "Update-Prüfung: Zertifikatsproblem — bitte die "
+                        "Release-Seite im Browser öffnen.")
+                else:
+                    self.update_var.set(
+                        "Update-Prüfung nicht möglich (%s)." % fehler)
             else:
                 self.update_var.set("Version %s" % spesen_lib.VERSION)
             self.update_punkt.configure(foreground=stil.GRAU)

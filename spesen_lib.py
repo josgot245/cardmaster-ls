@@ -184,7 +184,7 @@ EINSTELLUNGEN_DATEI = DATA_DIR / "einstellungen.json"  # Speicherorte
 # GitHub-Repository, in dem die Releases samt Setup liegen. Die Startseite
 # vergleicht diese Version mit dem neuesten Release und weist auf eine
 # neuere Fassung hin.
-VERSION = "1.4.11"
+VERSION = "1.4.12"
 GITHUB_REPO = "josgot245/cardmaster-ls"
 RELEASES_SEITE = "https://github.com/%s/releases" % GITHUB_REPO
 
@@ -326,11 +326,9 @@ def hole_neueste_version(timeout=6.0):
     Verbindungsfehlern eine Ausnahme.
     """
     url = "https://api.github.com/repos/%s/releases/latest" % GITHUB_REPO
-    anfrage = urllib.request.Request(
-        url, headers={"User-Agent": "CardMaster LS %s" % VERSION,
-                      "Accept": "application/vnd.github+json"})
-    with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:
-        daten = json.loads(antwort.read().decode("utf-8"))
+    daten = _url_json(url, timeout, kopf={
+        "User-Agent": "CardMaster LS %s" % VERSION,
+        "Accept": "application/vnd.github+json"})
     version = str(daten.get("tag_name") or daten.get("name") or "").strip()
     anhaenge = daten.get("assets") or []
     setup = None
@@ -472,10 +470,17 @@ def _ssl_kontext():
     return kontext
 
 
-def _url_json(url, timeout):
-    """JSON von einer HTTPS-URL holen (mit robustem SSL-Kontext)."""
-    anfrage = urllib.request.Request(url, headers={
-        "User-Agent": "CardMasterLS/1.1 (Spesenzettel aus der Fahrerkarte)"})
+def _url_json(url, timeout, kopf=None):
+    """JSON von einer HTTPS-URL holen (mit robustem SSL-Kontext).
+
+    ``kopf`` erlaubt zusätzliche/abweichende Header (z. B. den User-Agent
+    der GitHub-API). Der SSL-Kontext ist für alle HTTPS-Aufrufe identisch.
+    """
+    header = {
+        "User-Agent": "CardMasterLS/1.1 (Spesenzettel aus der Fahrerkarte)"}
+    if kopf:
+        header.update(kopf)
+    anfrage = urllib.request.Request(url, headers=header)
     with urllib.request.urlopen(
             anfrage, timeout=timeout, context=_ssl_kontext()) as antwort:
         return json.loads(antwort.read().decode("utf-8"))
