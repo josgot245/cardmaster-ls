@@ -184,7 +184,7 @@ EINSTELLUNGEN_DATEI = DATA_DIR / "einstellungen.json"  # Speicherorte
 # GitHub-Repository, in dem die Releases samt Setup liegen. Die Startseite
 # vergleicht diese Version mit dem neuesten Release und weist auf eine
 # neuere Fassung hin.
-VERSION = "1.4.13"
+VERSION = "1.4.14"
 GITHUB_REPO = "josgot245/cardmaster-ls"
 RELEASES_SEITE = "https://github.com/%s/releases" % GITHUB_REPO
 
@@ -987,7 +987,8 @@ def _position_standort(positionen, zeit, max_stunden=24.0):
     return _position_nahe(positionen, zeit)
 
 
-def _nacht_zuhause(von, bis, positionen, heim, radius_km, basis=None):
+def _nacht_zuhause(von, bis, positionen, heim, radius_km, basis=None,
+                   nacht_basis=None, log=None):
     """Stand der Lkw in der Nacht am Heimatort?
 
     von/bis begrenzen die Nacht (Ende des Vortags, Beginn des Folgetags).
@@ -995,10 +996,14 @@ def _nacht_zuhause(von, bis, positionen, heim, radius_km, basis=None):
     (0524). Rückgabe: True (zuhause), False (nicht zuhause), None
     (keine Position bekannt).
 
-    basis ist die häufigste Steck-/Ziehposition (Betriebshof). Liegt der
-    Lkw dort, gilt die Nacht ebenfalls als zuhause: Der Fahrer steht auf
-    seinem Hof, auch wenn die Adresse des Hofs von der geokodierten
-    Wohnadresse abweicht.
+    Als „zuhause“ gilt die Nacht, wenn die Position zu einem dieser drei
+    Bezüge passt:
+      heim        – geokodierte Heimatadresse (kann bei kompletter Adresse
+                    oder eingeschränktem System ungenau sein),
+      basis       – häufigste Steck-/Ziehposition (Betriebshof),
+      nacht_basis – häufigste Position in den Nachtstunden der ganzen Karte.
+                    Das ist der verlässlichste Bezug: Dort steht der Lkw
+                    regelmäßig abends/morgens, also zuhause bzw. auf Hof.
     """
     if heim is None:
         return None
@@ -1016,10 +1021,22 @@ def _nacht_zuhause(von, bis, positionen, heim, radius_km, basis=None):
         p = _position_nahe(positionen, mitte, max_stunden=36.0)
         if p is None:
             return None
+
     if _km_abstand(heim[0], heim[1], p["lat"], p["lon"]) <= radius_km:
         return True
-    if basis is not None:
-        return _km_abstand(basis[0], basis[1], p["lat"], p["lon"]) <= radius_km
+    for name, ref in (("Betriebshof", basis), ("Nachtstandort", nacht_basis)):
+        if ref is not None and \
+                _km_abstand(ref[0], ref[1], p["lat"], p["lon"]) <= radius_km:
+            return True
+    if log:
+        abstand = _km_abstand(heim[0], heim[1], p["lat"], p["lon"])
+        log("Nacht %s: Lkw bei %.3f, %.3f — %.1f km vom Heimatort "
+            "(%.1f km Betriebshof, %.1f km Nachtstandort)"
+            % (_fmt(von.date()), p["lat"], p["lon"], abstand,
+               _km_abstand(basis[0], basis[1], p["lat"], p["lon"])
+               if basis else -1,
+               _km_abstand(nacht_basis[0], nacht_basis[1], p["lat"], p["lon"])
+               if nacht_basis else -1))
     return False
 
 
@@ -1035,6 +1052,28 @@ def _basis_position(plaetze):
     if not zaehler:
         return None
     return max(zaehler, key=zaehler.get)
+
+
+def _nacht_basis_position(positionen, mindestens=2):
+    """Häufigste Position in den Nachtstunden (18–6 Uhr) der ganzen Karte.
+
+    Der Lkw steht abends und morgens regelmäßig am selben Ort – beim
+    Fahrer zuhause oder auf dem Betriebshof. Dieser Bezug ist unabhängig
+    von der Geokodierung der Heimatadresse und damit auch dann brauchbar,
+    wenn die Adresssuche ungenaue Koordinaten liefert.
+    """
+    zaehler = {}
+    for p in positionen:
+        if p["zeit"].hour >= 18 or p["zeit"].hour < 6:
+            lat, lon = p.get("lat"), p.get("lon")
+            if lat is None or lon is None:
+                continue
+            key = (round(lat, 2), round(lon, 2))
+            zaehler[key] = zaehler.get(key, 0) + 1
+    if not zaehler:
+        return None
+    key, anzahl = max(zaehler.items(), key=lambda x: x[1])
+    return key if anzahl >= mindestens else None
 
 
 def _wochenend_luecken(zeilen):
@@ -1148,6 +1187,15 @@ def fernverkehr_zeilen(info, heim, radius_km=8.0, log=None,
             "zeit": p["zeit"].replace(tzinfo=None),
             "lat": p["lat"], "lon": p["lon"], "quelle": "0524"})
     positionen.sort(key=lambda p: p["zeit"])
+    nacht_basis = _nacht_basis_position(positionen)
+    if heim is not None and nacht_basis is not None:
+        abweichung = _km_abstand(heim[0], heim[1],
+                                 nacht_basis[0], nacht_basis[1])
+        if abweichung > radius_km:
+            log("Hinweis: Der geokodierte Heimatort liegt %.1f km vom "
+                "häufigsten Nachtstandort entfernt. Die Nachtprüfung "
+                "verwendet deshalb auch den Nachtstandort als Zuhause."
+                % abweichung)
     grenzen = info.get("grenzen")
     if grenzen is None:
         grenzen = spesen_daten.read_border_crossings(info["pfad"])
@@ -1181,7 +1229,8 @@ def fernverkehr_zeilen(info, heim, radius_km=8.0, log=None,
         if luecke >= 24 * 3600:
             continue          # Wochenende/freier Tag beendet den Lauf
         zuhause = _nacht_zuhause(vor["real_ende"], akt["real_start"],
-                                 positionen, heim, radius_km, basis_pos)
+                                 positionen, heim, radius_km, basis_pos,
+                                 nacht_basis, log=log)
         if zuhause is None:
             log("Nacht %s -> %s: keine Position gefunden, echte Zeiten "
                 "werden verwendet." % (_fmt(vor["tag"]), _fmt(akt["tag"])))
