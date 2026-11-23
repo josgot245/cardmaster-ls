@@ -1483,10 +1483,12 @@ class App(tk.Tk):
         self.btn_heim.state(["!disabled"])
         niedrig = meldung.lower()
         if ("certificate" in niedrig or "ssl" in niedrig
-                or "zertifikat" in niedrig):
+                or "zertifikat" in niedrig or "timed out" in niedrig
+                or "timeout" in niedrig or "handshake" in niedrig):
             self.heim_var.set(
-                "„%s“: Zertifikatsproblem — bitte Koordinaten eingeben "
-                "(z. B. 53.55, 8.58) oder die IT kontaktieren." % text)
+                "„%s“: Verbindung zum Ortssuchdienst fehlgeschlagen — bitte "
+                "Koordinaten eingeben (z. B. 53.55, 8.58) oder die IT "
+                "kontaktieren." % text)
         else:
             self.heim_var.set("„%s“ nicht ermittelbar: %s" % (text, meldung))
         self.log("FEHLER beim Prüfen des Heimatorts: %s" % meldung)

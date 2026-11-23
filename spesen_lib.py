@@ -184,7 +184,7 @@ EINSTELLUNGEN_DATEI = DATA_DIR / "einstellungen.json"  # Speicherorte
 # GitHub-Repository, in dem die Releases samt Setup liegen. Die Startseite
 # vergleicht diese Version mit dem neuesten Release und weist auf eine
 # neuere Fassung hin.
-VERSION = "1.4.12"
+VERSION = "1.4.13"
 GITHUB_REPO = "josgot245/cardmaster-ls"
 RELEASES_SEITE = "https://github.com/%s/releases" % GITHUB_REPO
 
@@ -445,6 +445,11 @@ def abrechnungsperiode(tag):
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"
 NOMINATIM_SEARCH = "https://nominatim.openstreetmap.org/search"
 PHOTON_SEARCH = "https://photon.komoot.io/api/"   # zweiter Suchdienst
+OPENMETEO_SEARCH = "https://geocoding-api.open-meteo.com/v1/search"  # dritter
+
+# Groesseres Timeout: bei langsamen Verbindungen/FirmenProxy braucht der
+# TLS-Handshake laenger als die frueheren 12 Sekunden.
+SUCH_TIMEOUT = 20.0
 
 _ORT_LOCK = threading.Lock()      # schuetzt Cache-Datei vor Parallelzugriff
 
@@ -505,7 +510,7 @@ def _speichere_ortscache(cache):
         pass
 
 
-def _nominatim(lat, lon, timeout=8):
+def _nominatim(lat, lon, timeout=SUCH_TIMEOUT):
     """Eine Anfrage an Nominatim. Rueckgabe: Ortsname oder None (nicht
     gefunden). Erhaelt Netzwerkfehler als Ausnahme."""
     url = NOMINATIM_URL + "?" + urllib.parse.urlencode({
@@ -530,7 +535,7 @@ def _nominatim(lat, lon, timeout=8):
     return name
 
 
-def _nominatim_suche(text, timeout=12):
+def _nominatim_suche(text, timeout=SUCH_TIMEOUT):
     """Ort/PLZ über die Nominatim-Suche in Koordinaten übersetzen."""
     url = NOMINATIM_SEARCH + "?" + urllib.parse.urlencode({
         "q": text, "format": "jsonv2", "limit": 1,
@@ -547,7 +552,7 @@ def _nominatim_suche(text, timeout=12):
         return None
 
 
-def _photon_suche(text, timeout=12):
+def _photon_suche(text, timeout=SUCH_TIMEOUT):
     """Zweiter Suchdienst (Photon/Komoot) als Fallback.
 
     Liefert GeoJSON; die Koordinaten stehen als [lon, lat] in ``features``.
@@ -567,6 +572,27 @@ def _photon_suche(text, timeout=12):
     try:
         return float(koordinaten[1]), float(koordinaten[0])
     except (TypeError, ValueError):
+        return None
+
+
+def _openmeteo_suche(text, timeout=SUCH_TIMEOUT):
+    """Dritter Suchdienst (Open-Meteo) als weiterer Fallback.
+
+    Die Antwort enthält ``results`` mit ``latitude`` und ``longitude``.
+    Benötigt keinen API-Schlüssel.
+    """
+    url = OPENMETEO_SEARCH + "?" + urllib.parse.urlencode({
+        "name": text, "count": 1, "language": "de", "format": "json"})
+    ergebnis = _url_json(url, timeout)
+    if not isinstance(ergebnis, dict):
+        return None
+    treffer = ergebnis.get("results")
+    if not isinstance(treffer, list) or not treffer:
+        return None
+    eintrag = treffer[0] or {}
+    try:
+        return float(eintrag["latitude"]), float(eintrag["longitude"])
+    except (KeyError, TypeError, ValueError):
         return None
 
 
@@ -603,27 +629,27 @@ def heimatort_aufloesen(text, log=None):
                 return float(lat), float(lon)
             except (ValueError, TypeError):
                 return None
+        treffer = None
         fehler = None
-        try:
-            treffer = _nominatim_suche(text)
-        except Exception as e:
-            fehler = e
-            if log:
-                log("Nominatim für „%s“ nicht erreichbar (%s) — "
-                    "zweiter Suchdienst wird versucht." % (text, e))
-            treffer = None
-        if treffer is None and fehler is not None:
-            # Nominatim hatte einen Netzwerk-/SSL-Fehler: zweiter Dienst.
+        # Drei unabhängige Dienste nacheinander versuchen. Bei Netzwerk-
+        # fehlern (z. B. Handshake-Timeout) wird der naechste versucht.
+        for name, suche in (("Nominatim", _nominatim_suche),
+                            ("Photon", _photon_suche),
+                            ("Open-Meteo", _openmeteo_suche)):
             try:
-                treffer = _photon_suche(text)
+                treffer = suche(text)
                 fehler = None
-            except Exception as e2:
-                fehler = e2
+                if treffer is not None:
+                    break
+            except Exception as e:
+                fehler = e
                 if log:
-                    log("Auch Photon für „%s“ nicht erreichbar (%s)"
-                        % (text, e2))
+                    log("%s für „%s“ nicht erreichbar (%s)"
+                        % (name, text, e))
+            if treffer is None and log and fehler is None:
+                log("%s fand „%s“ nicht." % (name, text))
         if fehler is not None:
-            # Kein Treffer, aber Netzwerkfehler -> nichts cachen, damit ein
+            # Alle Dienste mit Netzwerkfehler -> nichts cachen, damit ein
             # spaeterer Versuch (z. B. nach Proxy-Korrektur) wieder läuft.
             raise fehler
         if treffer is None:
